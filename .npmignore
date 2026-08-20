@@ -1,0 +1,9 @@
+# Source & config — the published package only needs the compiled dist/.
+src/
+tsconfig.json
+.gitignore
+*.log
+.DS_Store
+# Keep node_modules and the local workspace out of the tarball.
+node_modules/
+/workspace/
