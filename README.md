@@ -1,5 +1,8 @@
 # leetcode-cli-tui
 
+<img width="1198" height="797" alt="image" src="https://github.com/user-attachments/assets/adf6ce87-cca9-4c2f-bc90-6fe4306153a8" />
+
+
 Work with LeetCode problems entirely from your terminal: **fetch** a problem, edit it
 in a **split-pane TUI** (problem description on the left, code editor on the right), and
 **run** the sample tests and **submit** — all without leaving the CLI.
