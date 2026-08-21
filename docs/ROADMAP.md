@@ -38,6 +38,7 @@ Effort key: 🟢 small · 🟡 medium · 🔴 large. Items already shipped are m
 
 - ✅ Custom testcases (`Ctrl-T`).
 - ✅ Hints on demand (`F3`).
+- ✅ Reset editor to original starter code (`F4`, undoable).
 - ✅ Spaced-repetition review (`leetcode review`).
 - 🟡 Rich run/submit results — per-testcase pass/fail table, runtime/memory percentile bars.
 - 🟡 After a solve, show the editorial / top community solutions in a pane.

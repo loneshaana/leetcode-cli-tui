@@ -120,6 +120,23 @@ export class CodeEditor {
     this.render();
   }
 
+  /**
+   * Replace the whole buffer but keep it undoable (Ctrl-Z restores the prior
+   * content). Used to reset the editor back to the original starter code.
+   */
+  resetTo(value: string): void {
+    this.pushUndo();
+    this.lines = value.replace(/\r\n/g, '\n').split('\n');
+    if (this.lines.length === 0) this.lines = [''];
+    this.cy = 0;
+    this.cx = 0;
+    this.top = 0;
+    this.left = 0;
+    this.markDirty();
+    this.emitStatus();
+    this.render();
+  }
+
   /** Delete the line the caret is on (bound to Ctrl-X in the main editor). */
   deleteCurrentLine(): void {
     this.pushUndo();

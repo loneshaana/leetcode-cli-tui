@@ -102,6 +102,7 @@ Keybindings:
 | `Ctrl-S` | Submit |
 | `Ctrl-T` | Open/close the **custom testcase** editor |
 | `F3` | Reveal the next **hint** for the problem |
+| `F4` | **Reset the editor** back to the original starter code (undoable with `Ctrl-Z`) |
 | `Ctrl-A` | **Save the solution to a file** (clean code) |
 | `Ctrl-X` | Delete the current line |
 | `Ctrl-Z` / `Ctrl-Y` | Undo / redo |

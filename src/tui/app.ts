@@ -27,6 +27,7 @@ const HELP =
   '{cyan-fg}{bold}^S{/bold}{/cyan-fg} submit  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^T{/bold}{/cyan-fg} test  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}F3{/bold}{/cyan-fg} hint  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}F4{/bold}{/cyan-fg} reset  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^A{/bold}{/cyan-fg} save-as  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^W{/bold}{/cyan-fg} save  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}F2{/bold}{/cyan-fg} vim  {grey-fg}·{/grey-fg}  ' +
@@ -355,6 +356,13 @@ export function runTui(params: TuiParams): Promise<void> {
       resetStatus();
     }
 
+    function resetEditor(): void {
+      editor.resetTo(starterCode(problem, filePath));
+      saveCode();
+      focusPane(1);
+      setOutput('Editor reset to the original starter code. Press Ctrl-Z to undo.');
+    }
+
     function startSpinner(label: string): void {
       let i = 0;
       stopSpinner();
@@ -548,6 +556,9 @@ export function runTui(params: TuiParams): Promise<void> {
     screen.key(['f3'], () => {
       if (!tcOpen && !saveOpen) showNextHint();
     });
+    screen.key(['f4'], () => {
+      if (!tcOpen && !saveOpen) resetEditor();
+    });
 
     // Initial paint, then load code and focus the editor.
     screen.render();
@@ -733,6 +744,13 @@ function readCode(filePath: string): string {
   } catch {
     return '';
   }
+}
+
+/** The original starter code for the file's language, straight from the problem. */
+function starterCode(problem: Problem, filePath: string): string {
+  const lang = langOf(filePath);
+  const snippet = problem.codeSnippets.find((s) => s.langSlug === lang);
+  return (snippet ? snippet.code : readCode(filePath)).replace(/\r\n/g, '\n').replace(/\n+$/, '');
 }
 
 function langOf(filePath: string): string {
