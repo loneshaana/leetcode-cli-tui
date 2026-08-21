@@ -212,25 +212,17 @@ class Solution { ... }   // <-- your code
 
 The package is published to npm by **GitHub Actions** (`.github/workflows/publish.yml`),
 which runs on GitHub's runners so it isn't affected by local network/registry restrictions.
-It uses npm **Trusted Publishing (OIDC)** — **no npm token is stored anywhere**; GitHub mints
-a short-lived credential for each run, and npm records build **provenance** automatically.
 
-One-time setup:
+Setup:
 
-1. **First publish** — trusted publishing can only be configured on a package that already
-   exists, so publish an initial version once from a machine that can reach npm:
+1. **Create an npm token** — on npmjs.com, **avatar → Access Tokens** → generate an
+   **Automation** classic token (or a **Granular** token with read/write to the package).
+2. **Add it to the repo** as a secret named `NPM_TOKEN`:
    ```bash
-   npm publish --access public      # or: npx setup-npm-trusted-publish leetcode-cli-tui
+   gh secret set NPM_TOKEN
    ```
-   (This is the only time a token/2FA is needed.)
-2. **Configure the trusted publisher** — on npmjs.com open the package →
-   **Settings → Trusted Publisher → GitHub Actions** and enter:
-   - Organization/user: `loneshaana`
-   - Repository: `leetcode-cli-tui`
-   - Workflow filename: `publish.yml`
-3. That's it — delete any leftover `NPM_TOKEN` secret; it's no longer used.
 
-To publish a new version:
+To publish a version:
 
 ```bash
 npm version patch   # or minor / major — bumps package.json and tags
@@ -239,8 +231,19 @@ gh release create v$(node -p "require('./package.json').version") --generate-not
 ```
 
 Publishing the release triggers the workflow (`npm ci` → `npm run build` →
-`npm publish`), which authenticates via OIDC. You can also run it manually from the
-**Actions → Publish to npm → Run workflow** button.
+`npm publish --provenance --access public`), authenticated with `NPM_TOKEN`. You can also run
+it manually from **Actions → Publish to npm → Run workflow**.
+
+### Later: migrate to Trusted Publishing (OIDC)
+
+Once the package exists on npm you can drop the stored token and use OIDC instead — GitHub
+mints a short-lived credential per run:
+
+1. On npmjs.com open the package → **Settings → Trusted Publisher → GitHub Actions** and enter
+   org `loneshaana`, repo `leetcode-cli-tui`, workflow `publish.yml`.
+2. In `publish.yml`, remove the `NODE_AUTH_TOKEN` env from the publish step and add
+   `npm install -g npm@latest` before it (OIDC needs npm ≥ 11.5.1).
+3. Delete the `NPM_TOKEN` secret.
 
 ## Roadmap
 

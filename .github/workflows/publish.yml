@@ -1,13 +1,13 @@
 name: Publish to npm
 
-# Publishes to the public npm registry using npm Trusted Publishing (OIDC):
-# no NPM_TOKEN secret is stored — GitHub mints a short-lived credential per run.
+# Publishes to the public npm registry from GitHub's runners (so it isn't
+# affected by local network/registry restrictions).
 #
-# One-time setup (see README "Releasing"):
-#   1. Publish v0.0.0 once (a package must exist before trusted publishing can
-#      be configured).
-#   2. On npmjs.com: package -> Settings -> Trusted Publisher -> GitHub Actions,
-#      pointing at this repo and workflow file (.github/workflows/publish.yml).
+# Auth: an NPM_TOKEN secret (npm "Automation" token, or a granular read/write
+# token). Add it with:  gh secret set NPM_TOKEN
+#
+# Once the package exists you can migrate to Trusted Publishing (OIDC) and drop
+# the token — see README "Releasing".
 #
 # Trigger by publishing a GitHub Release, or manually from the Actions tab.
 on:
@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # required for OIDC trusted publishing + provenance
+      id-token: write # lets npm record build provenance
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,15 +31,13 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      # Trusted publishing needs npm >= 11.5.1; the bundled npm may be older.
-      - name: Upgrade npm (OIDC support)
-        run: npm install -g npm@latest
-
       - name: Install dependencies
         run: npm ci
 
       - name: Build
         run: npm run build
 
-      - name: Publish (OIDC, no token)
-        run: npm publish --access public
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
