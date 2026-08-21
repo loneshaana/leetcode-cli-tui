@@ -208,6 +208,31 @@ class Solution { ... }   // <-- your code
 - If a request returns `403`, your session expired — run `leetcode login` again.
 - Premium (paid-only) problems require an active subscription; content may be unavailable.
 
+## Releasing
+
+The package is published to npm by **GitHub Actions** (`.github/workflows/publish.yml`),
+which runs on GitHub's runners so it isn't affected by local network/registry restrictions.
+
+One-time setup:
+
+1. Create an **npm access token** (Automation type) at
+   <https://www.npmjs.com/settings/~/tokens>.
+2. Add it to the repo as a secret named **`NPM_TOKEN`**
+   (`Settings → Secrets and variables → Actions → New repository secret`),
+   or with the CLI: `gh secret set NPM_TOKEN`.
+
+To publish a version:
+
+```bash
+npm version patch   # or minor / major — bumps package.json and tags
+git push --follow-tags
+gh release create v$(node -p "require('./package.json').version") --generate-notes
+```
+
+Publishing the release triggers the workflow, which runs `npm ci`, `npm run build`, and
+`npm publish --provenance --access public`. You can also run it manually from the
+**Actions → Publish to npm → Run workflow** button.
+
 ## Roadmap
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for planned and shipped features.
