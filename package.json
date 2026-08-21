@@ -1,6 +1,6 @@
 {
   "name": "leetcode-cli-tui",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Work with LeetCode problems from your terminal: fetch, edit in a split-pane TUI, run and submit.",
   "license": "MIT",
   "author": "loneshaana",
