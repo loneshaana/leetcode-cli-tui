@@ -22,7 +22,15 @@ export interface TuiParams {
 }
 
 const HELP =
-  ' Shift-Tab pane | Ctrl-R run | Ctrl-S submit | Ctrl-T testcase | F3 hint | Ctrl-X del-line | Ctrl-A save-as | Ctrl-W save | F2 vim | Ctrl-Q quit ';
+  '{cyan-fg}{bold}Tab{/bold}{/cyan-fg} pane  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}^R{/bold}{/cyan-fg} run  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}^S{/bold}{/cyan-fg} submit  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}^T{/bold}{/cyan-fg} test  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}F3{/bold}{/cyan-fg} hint  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}^A{/bold}{/cyan-fg} save-as  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}^W{/bold}{/cyan-fg} save  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}F2{/bold}{/cyan-fg} vim  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}^Q{/bold}{/cyan-fg} quit';
 
 const SPINNER = ['|', '/', '-', '\\'];
 
@@ -37,13 +45,24 @@ export function runTui(params: TuiParams): Promise<void> {
       autoPadding: true,
     });
 
-    const descBox = blessed.box({
+    blessed.box({
       parent: screen,
-      label: ` ${problem.frontendId}. ${problem.title} [${problem.difficulty}] `,
       top: 0,
       left: 0,
+      width: '100%',
+      height: 1,
+      tags: true,
+      style: { fg: 'white', bg: '#30365a' },
+      content: buildHeader(problem, langOf(filePath)),
+    });
+
+    const descBox = blessed.box({
+      parent: screen,
+      label: ' 📄 Problem ',
+      top: 1,
+      left: 0,
       width: '50%',
-      height: '100%-5',
+      bottom: 5,
       border: { type: 'line' },
       scrollable: true,
       alwaysScroll: true,
@@ -52,21 +71,21 @@ export function runTui(params: TuiParams): Promise<void> {
       vi: true,
       tags: true,
       scrollbar: { ch: ' ', track: { bg: 'grey' }, style: { bg: 'cyan' } },
-      style: { border: { fg: 'grey' }, focus: { border: { fg: 'cyan' } } },
+      style: { border: { fg: 'blue' }, focus: { border: { fg: 'cyan' } } },
       content: buildDescription(problem),
     });
 
     // Colored metadata (difficulty + tags) pinned at the bottom of the left pane.
     blessed.box({
       parent: screen,
-      label: ' Info ',
+      label: ' ℹ Info ',
       left: 0,
       bottom: 1,
       width: '50%',
       height: 4,
       border: { type: 'line' },
       tags: true,
-      style: { border: { fg: 'grey' } },
+      style: { border: { fg: 'blue' } },
       content: buildMeta(problem),
     });
 
@@ -74,13 +93,13 @@ export function runTui(params: TuiParams): Promise<void> {
       screen,
       {
         parent: screen,
-        label: ' Editor ',
-        top: 0,
+        label: ' 📝 Editor ',
+        top: 1,
         left: '50%',
         width: '50%',
         height: '70%-1',
         border: { type: 'line' },
-        style: { border: { fg: 'grey' }, focus: { border: { fg: 'green' } } },
+        style: { border: { fg: 'green' }, focus: { border: { fg: 'green' } } },
       },
       () => markDirty(),
       {
@@ -98,11 +117,11 @@ export function runTui(params: TuiParams): Promise<void> {
 
     const outputBox = blessed.box({
       parent: screen,
-      label: ' Output ',
-      top: '70%-1',
+      label: ' ▶ Output ',
+      top: '70%',
       left: '50%',
       width: '50%',
-      height: '30%',
+      bottom: 1,
       border: { type: 'line' },
       scrollable: true,
       alwaysScroll: true,
@@ -111,7 +130,7 @@ export function runTui(params: TuiParams): Promise<void> {
       vi: true,
       tags: true,
       scrollbar: { ch: ' ', style: { bg: 'cyan' } },
-      style: { border: { fg: 'grey' }, focus: { border: { fg: 'yellow' } } },
+      style: { border: { fg: 'magenta' }, focus: { border: { fg: 'yellow' } } },
       content: 'Ready. Ctrl-R runs the sample tests, Ctrl-S submits.',
     });
 
@@ -122,7 +141,7 @@ export function runTui(params: TuiParams): Promise<void> {
       width: '100%',
       height: 1,
       tags: true,
-      style: { fg: 'black', bg: 'cyan' },
+      style: { fg: 'white', bg: '#26263b' },
       content: HELP,
     });
 
@@ -135,7 +154,7 @@ export function runTui(params: TuiParams): Promise<void> {
       width: '70%',
       height: '60%',
       border: { type: 'line' },
-      label: ' Custom testcase (Ctrl-R run · Esc save & close · Ctrl-X clear) ',
+      label: ' 🧪 Custom testcase (Ctrl-R run · Esc save & close · Ctrl-X clear) ',
       style: { border: { fg: 'magenta' } },
     });
     blessed.box({
@@ -173,7 +192,7 @@ export function runTui(params: TuiParams): Promise<void> {
       width: '70%',
       height: 6,
       border: { type: 'line' },
-      label: ' Save solution to file (Enter = save · Esc = cancel) ',
+      label: ' 💾 Save solution to file (Enter = save · Esc = cancel) ',
       style: { border: { fg: 'green' } },
     });
     blessed.box({
@@ -262,11 +281,14 @@ export function runTui(params: TuiParams): Promise<void> {
     }
 
     function renderStatusBar(): void {
-      const time = `{black-fg}⏱ ${clock()}{/black-fg} `;
-      const left = vimStatus
-        ? `{yellow-bg}{black-fg} ${vimStatus} {/black-fg}{/yellow-bg} `
+      const time = `{yellow-fg}{bold}⏱ ${clock()}{/bold}{/yellow-fg}`;
+      const mode = vimStatus
+        ? ` {yellow-bg}{black-fg} ${vimStatus} {/black-fg}{/yellow-bg}`
         : '';
-      status.setContent(time + left + HELP + (dirty ? ' {red-fg}[unsaved]{/red-fg}' : ''));
+      const flag = dirty
+        ? ` {red-fg}●{/red-fg}{grey-fg} unsaved{/grey-fg}`
+        : ` {green-fg}●{/green-fg}{grey-fg} saved{/grey-fg}`;
+      status.setContent(` ${time}${mode}${flag}  {grey-fg}│{/grey-fg}  ${HELP} `);
       screen.render();
       placeCaret();
     }
@@ -337,7 +359,7 @@ export function runTui(params: TuiParams): Promise<void> {
       let i = 0;
       stopSpinner();
       spinnerTimer = setInterval(() => {
-        status.setContent(` ${SPINNER[i++ % SPINNER.length]} ${label} `);
+        status.setContent(` {cyan-fg}{bold}${SPINNER[i++ % SPINNER.length]}{/bold}{/cyan-fg} {white-fg}${label}{/white-fg} `);
         screen.render();
       }, 120);
     }
@@ -598,6 +620,17 @@ function buildRunTable(r: JudgeResult, dataInput: string): string | null {
     lines.push('{grey-fg}' + blessed.escape('runtime: ' + r.status_runtime) + '{/grey-fg}');
   }
   return lines.join('\n');
+}
+
+function buildHeader(problem: Problem, lang: string): string {
+  const sep = '{grey-fg}│{/grey-fg}';
+  const id = blessed.escape(`${problem.frontendId}. ${problem.title}`);
+  const diff = colorDifficulty(problem.difficulty);
+  return (
+    ` {yellow-fg}{bold}⚡ LeetCode{/bold}{/yellow-fg}  ${sep}  ` +
+    `{white-fg}{bold}${id}{/bold}{/white-fg}  ${sep}  ${diff}  ${sep}  ` +
+    `{cyan-fg}${blessed.escape(lang)}{/cyan-fg}`
+  );
 }
 
 function buildDescription(problem: Problem): string {

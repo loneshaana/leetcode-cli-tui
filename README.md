@@ -79,14 +79,17 @@ Solution files are written to the workspace (default `~/leetcode-workspace`) as
 
 ## The TUI
 
-`leetcode tui <problem>` opens three panes:
+`leetcode tui <problem>` opens a full-screen workspace with a branded **header bar** at the
+top (⚡ LeetCode · problem id & title · color-coded difficulty · language), a segmented
+**status footer** at the bottom (elapsed timer, a saved/unsaved `●` indicator, and a colored
+key-hint strip), and four accent-bordered panes:
 
-- **Left** — the **syntax-colored** problem description (scrollable): a cyan title, cyan
-  headings, green example/code blocks, yellow inline `code` and white **bold** text — with a
-  colored **Info** panel pinned at the bottom showing the **difficulty** (green/yellow/red)
-  and **tags**.
-- **Top right** — a code editor pre-filled with the starter code.
-- **Bottom right** — run/submit output.
+- **📄 Problem** (left) — the **syntax-colored** problem description (scrollable): a cyan title,
+  cyan headings, green example/code blocks, yellow inline `code` and white **bold** text.
+- **ℹ Info** (bottom left) — a panel pinned under the description showing the **difficulty**
+  (green/yellow/red) and **tags**.
+- **📝 Editor** (top right) — a code editor pre-filled with the starter code.
+- **▶ Output** (bottom right) — run/submit output.
 
 Keybindings:
 
@@ -198,3 +201,8 @@ class Solution { ... }   // <-- your code
 
 - If a request returns `403`, your session expired — run `leetcode login` again.
 - Premium (paid-only) problems require an active subscription; content may be unavailable.
+
+## Roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for planned and shipped features.
+
