@@ -94,6 +94,14 @@ export class CodeEditor {
       this.box.focus();
       this.render();
     });
+    this.box.on('wheeldown', () => {
+      this.pageMove(3);
+      this.render();
+    });
+    this.box.on('wheelup', () => {
+      this.pageMove(-3);
+      this.render();
+    });
   }
 
   focus(): void {

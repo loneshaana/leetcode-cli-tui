@@ -121,8 +121,8 @@ a closing `}` de-indents it. `Tab` inserts 4 spaces — or, when the caret follo
 keyword at the start of a line, expands a **code snippet** (`for`, `while`, `if`, `def`/`class`/`main`
 in Python; `for`, `while`, `if`, `main` in C/C++/Java/JS/TS/Go/Rust) and drops the caret in the
 right spot. For heavy editing you can always jump
-to your own editor with `Ctrl-E`. Mouse is supported — click a pane to focus it, scroll to
-navigate.
+to your own editor with `Ctrl-E`. Mouse is supported — click a pane to focus it, and scroll
+the wheel to move through both the problem description and the editor.
 
 ### Vim mode
 
