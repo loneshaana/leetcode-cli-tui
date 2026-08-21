@@ -142,6 +142,11 @@ Press `Ctrl-T` to open a popup where you can type your own input (one argument p
 in the same format as the problem's examples). `Ctrl-R` then runs against it. Inside the
 popup: `Esc` saves & closes, `Ctrl-X` clears it (empty = fall back to the sample tests).
 
+Whenever a **run or submit fails**, the exact input(s) it failed on are **automatically
+added to your custom test cases** (deduplicated, so nothing is added twice). You'll see a
+note in the output pane — open the popup with `Ctrl-T` to inspect them, and every following
+`Ctrl-R` re-runs against your growing set of failing cases until they all pass.
+
 From the plain CLI you can pass a custom testcase to `run`:
 
 ```bash

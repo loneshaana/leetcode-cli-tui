@@ -398,6 +398,75 @@ export function runTui(params: TuiParams): Promise<void> {
       focusPane(1);
     }
 
+    const normalizeCase = (c: string): string =>
+      c.split('\n').map((s) => s.trim()).join('\n').trim();
+
+    // Split a testcase blob into per-case chunks of `argsPerCase` lines each.
+    function splitCases(blob: string, argsPerCase: number): string[] {
+      if (argsPerCase <= 0) return [];
+      const lines = blob.replace(/\s+$/, '').split('\n');
+      const cases: string[] = [];
+      for (let i = 0; i + argsPerCase <= lines.length; i += argsPerCase) {
+        cases.push(lines.slice(i, i + argsPerCase).join('\n'));
+      }
+      return cases;
+    }
+
+    /**
+     * Merge failing testcases into the manual/custom testcase set, skipping any
+     * that are already present. Returns how many new cases were added.
+     */
+    function addFailingCases(newCases: string[], argsPerCase: number): number {
+      if (argsPerCase <= 0) return 0;
+      const base = (customTestcase ?? problem.exampleTestcases ?? '').replace(/\s+$/, '');
+      const existing = base ? splitCases(base, argsPerCase) : [];
+      const seen = new Set(existing.map(normalizeCase));
+      let added = 0;
+      for (const raw of newCases) {
+        const c = raw.replace(/\r\n/g, '\n').replace(/\s+$/, '');
+        if (!c.trim() || seen.has(normalizeCase(c))) continue;
+        existing.push(c);
+        seen.add(normalizeCase(c));
+        added++;
+      }
+      if (added > 0) {
+        customTestcase = existing.join('\n');
+        if (tcOpen) tcEditor.setValue(customTestcase);
+      }
+      return added;
+    }
+
+    // Failing cases from a run (interpret) result, paired with args-per-case.
+    function collectFailingRunCases(
+      r: JudgeResult,
+      dataInput: string
+    ): { cases: string[]; argsPerCase: number } {
+      const norm = (v: string[] | string | undefined): string[] =>
+        !v ? [] : Array.isArray(v) ? v : [v];
+      const got = norm(r.code_answer);
+      const expected = norm(r.expected_code_answer);
+      const n = Math.max(got.length, expected.length);
+      if (n === 0 || expected.length === 0) return { cases: [], argsPerCase: 0 };
+      const inputs = dataInput ? dataInput.replace(/\s+$/, '').split('\n') : [];
+      if (inputs.length === 0 || inputs.length % n !== 0) return { cases: [], argsPerCase: 0 };
+      const argsPerCase = inputs.length / n;
+      const cases: string[] = [];
+      for (let i = 0; i < n; i++) {
+        if ((got[i] ?? '') !== (expected[i] ?? '')) {
+          cases.push(inputs.slice(i * argsPerCase, (i + 1) * argsPerCase).join('\n'));
+        }
+      }
+      return { cases, argsPerCase };
+    }
+
+    function noteAddedCases(added: number): void {
+      const msg =
+        `\n{yellow-fg}➕ Added ${added} failing testcase${added > 1 ? 's' : ''} ` +
+        `to your custom tests — press Ctrl-T to view.{/yellow-fg}`;
+      outputBox.setContent(outputBox.getContent() + msg);
+      refresh();
+    }
+
     async function doRun(): Promise<void> {
       if (busy) return;
       busy = true;
@@ -420,6 +489,11 @@ export function runTui(params: TuiParams): Promise<void> {
         const table = buildRunTable(result, dataInput);
         if (table) setRichOutput(table);
         else setOutput(formatRunResult(result, { color: false }));
+        if (result.correct_answer !== true) {
+          const { cases, argsPerCase } = collectFailingRunCases(result, dataInput);
+          const added = addFailingCases(cases, argsPerCase);
+          if (added > 0) noteAddedCases(added);
+        }
       } catch (err) {
         setOutput('Run failed:\n' + (err as Error).message);
       } finally {
@@ -460,6 +534,11 @@ export function runTui(params: TuiParams): Promise<void> {
           setOutput(body);
         } else {
           setRichOutput(encouragementTags() + blessed.escape(body));
+          if (result.last_testcase && result.last_testcase.trim()) {
+            const lt = result.last_testcase.replace(/\r\n/g, '\n');
+            const added = addFailingCases([lt], lt.split('\n').length);
+            if (added > 0) noteAddedCases(added);
+          }
         }
       } catch (err) {
         setOutput('Submit failed:\n' + (err as Error).message);

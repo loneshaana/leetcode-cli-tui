@@ -37,6 +37,7 @@ Effort key: 🟢 small · 🟡 medium · 🔴 large. Items already shipped are m
 ## Feedback & learning
 
 - ✅ Custom testcases (`Ctrl-T`).
+- ✅ Auto-capture failing run/submit inputs into custom testcases (deduplicated).
 - ✅ Hints on demand (`F3`).
 - ✅ Reset editor to original starter code (`F4`, undoable).
 - ✅ Spaced-repetition review (`leetcode review`).
