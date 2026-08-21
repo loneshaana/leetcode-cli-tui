@@ -1,17 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import * as log from './util/log';
-import { loginCommand } from './commands/login';
-import { listCommand } from './commands/list';
-import { showCommand } from './commands/show';
-import { runCommand } from './commands/run';
-import { submitCommand } from './commands/submit';
-import { exportCommand } from './commands/export';
-import { tuiCommand } from './commands/tui';
-import { configCommand } from './commands/config';
-import { statsCommand } from './commands/stats';
-import { randomCommand } from './commands/random';
-import { reviewCommand } from './commands/review';
 
 const program = new Command();
 
@@ -25,7 +14,7 @@ program
   .description('Log in: opens LeetCode in your default browser, then saves your session cookies')
   .option('--no-open', 'Do not open the browser automatically; just show the URL')
   .option('-f, --force', 'Re-login even if a valid session already exists')
-  .action(wrap(loginCommand));
+  .action(lazy(() => import('./commands/login.js'), 'loginCommand'));
 
 program
   .command('list')
@@ -37,7 +26,7 @@ program
   .option('-q, --search <text>', 'Search by keyword')
   .option('--todo', 'Only unsolved problems')
   .option('--solved', 'Only solved problems')
-  .action(wrap(listCommand));
+  .action(lazy(() => import('./commands/list.js'), 'listCommand'));
 
 program
   .command('show <problem>')
@@ -47,32 +36,32 @@ program
   .option('-o, --open', 'Print the problem description to stdout')
   .option('--no-gen', 'Do not generate a solution file')
   .option('--overwrite', 'Overwrite an existing solution file')
-  .action(wrap(showCommand));
+  .action(lazy(() => import('./commands/show.js'), 'showCommand'));
 
 program
   .command('tui <problem>')
   .alias('edit')
   .description('Open the split-pane TUI: description + editor, run/submit inline')
   .option('-L, --lang <lang>', 'Language (defaults to configured language)')
-  .action(wrap(tuiCommand));
+  .action(lazy(() => import('./commands/tui.js'), 'tuiCommand'));
 
 program
   .command('run <file>')
   .description('Run a solution file against the sample test cases')
   .option('-t, --testcase <input>', 'Custom test input (use \\n for newlines)')
-  .action(wrap(runCommand));
+  .action(lazy(() => import('./commands/run.js'), 'runCommand'));
 
 program
   .command('submit <file>')
   .description('Submit a solution file to LeetCode')
-  .action(wrap(submitCommand));
+  .action(lazy(() => import('./commands/submit.js'), 'submitCommand'));
 
 program
   .command('export <file>')
   .alias('save')
   .description('Save the clean solution code (no metadata/description) to a file')
   .option('-o, --out <path>', 'Output file path (default: <dir>/solutions/<id>-<slug>.<ext>)')
-  .action(wrap(exportCommand));
+  .action(lazy(() => import('./commands/export.js'), 'exportCommand'));
 
 program
   .command('config')
@@ -82,12 +71,12 @@ program
   .option('--vim <state>', 'Enable vim key bindings in the TUI editor (on|off)')
   .option('--bell <state>', 'Ring the terminal bell on Accepted (on|off)')
   .option('--theme <name>', 'Editor syntax theme (default|dracula|monokai|solarized|neon|mono)')
-  .action(wrap(configCommand));
+  .action(lazy(() => import('./commands/config.js'), 'configCommand'));
 
 program
   .command('stats')
   .description('Show your solved count, streaks and difficulty breakdown')
-  .action(wrap(statsCommand));
+  .action(lazy(() => import('./commands/stats.js'), 'statsCommand'));
 
 program
   .command('random')
@@ -98,24 +87,30 @@ program
   .option('--todo', 'Only pick from unsolved problems')
   .option('--no-gen', 'Do not generate a solution file')
   .option('--overwrite', 'Overwrite an existing solution file')
-  .action(wrap(randomCommand));
+  .action(lazy(() => import('./commands/random.js'), 'randomCommand'));
 
 program
   .command('review')
   .description('Spaced-repetition review: which solved problems are due to revisit')
   .option('-a, --all', 'Show the full schedule, not just what is due')
   .option('-l, --limit <n>', 'Maximum problems to list', '15')
-  .action(wrap(reviewCommand));
+  .action(lazy(() => import('./commands/review.js'), 'reviewCommand'));
 
 program.parseAsync(process.argv).catch((err) => {
   log.error((err as Error).message);
   process.exit(1);
 });
 
-/** Wrap an async action so errors are reported cleanly instead of as unhandled rejections. */
-function wrap<A extends unknown[]>(fn: (...args: A) => Promise<void>) {
-  return async (...args: A): Promise<void> => {
+/**
+ * Lazily load a command module only when its command runs, so simple commands
+ * don't pay the cost of importing heavy dependencies (e.g. blessed for the TUI).
+ * Errors are reported cleanly instead of surfacing as unhandled rejections.
+ */
+function lazy(load: () => Promise<Record<string, unknown>>, name: string) {
+  return async (...args: unknown[]): Promise<void> => {
     try {
+      const mod = await load();
+      const fn = mod[name] as (...a: unknown[]) => Promise<void>;
       await fn(...args);
     } catch (err) {
       log.error((err as Error).message);
@@ -123,3 +118,4 @@ function wrap<A extends unknown[]>(fn: (...args: A) => Promise<void>) {
     }
   };
 }
+

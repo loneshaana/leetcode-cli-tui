@@ -1,4 +1,3 @@
-import blessed from 'blessed';
 import { LANGUAGES } from '../languages';
 
 /**
@@ -78,7 +77,8 @@ function getSpec(slug: string): LangSpec {
   return spec;
 }
 
-const esc = (s: string): string => blessed.escape(s);
+const esc = (s: string): string =>
+  s.replace(/[{}]/g, (c) => (c === '{' ? '{open}' : '{close}'));
 const tag = (t: string, s: string): string => `{${t}}${esc(s)}{/${t}}`;
 
 /** Token colors for a syntax theme (blessed color tags, name or hex). */
