@@ -66,6 +66,7 @@ export class CodeEditor {
   private vax = 0; // visual anchor column
   private vay = 0; // visual anchor row
   private lastNewlineTs = 0; // timestamp of last processed newline, to coalesce CRLF halves
+  private lastNewlineName = ''; // key name of last processed newline (return/enter/linefeed)
   private lastFind: { cmd: string; ch: string } | null = null; // for ; and ,
   private lastDot: (() => void) | null = null; // last change, for the . command
 
@@ -401,21 +402,24 @@ export class CodeEditor {
   private handleKey(ch: string, key: blessed.Widgets.Events.IKeyEventArg): void {
     if (!key) return;
 
-    // Coalesce CRLF into a single Enter. On Windows, pressing Enter emits two
-    // keypresses: "return" (\r) followed by "enter" (\n). Without this, every
-    // Enter would insert two newlines (a blank line between each line).
-    // Coalesce CRLF into a single Enter. On Windows, one physical Enter emits
-    // two keypresses in the same event-loop tick ("return"/\r and "enter"/\n, in
-    // either order). Swallow the second half if it arrives within a few ms of the
-    // first, so one Enter inserts exactly one newline. A real double-Enter (or a
-    // key-repeat) is tens of ms apart and is not coalesced.
+    // Coalesce a Windows CRLF into a single Enter. One physical Enter emits a
+    // "return"/\r + "enter"/\n pair in the same tick (two *different* key
+    // names). Swallow the second half only when it is a differently-named
+    // newline arriving within a few ms — so genuinely repeated newlines with
+    // the *same* name (e.g. pasting multi-line text, or key-repeat) are kept.
     if (key.name === 'return' || key.name === 'enter' || key.name === 'linefeed') {
       const now = Date.now();
-      if (now - this.lastNewlineTs < 20) {
+      if (
+        now - this.lastNewlineTs < 20 &&
+        this.lastNewlineName &&
+        this.lastNewlineName !== key.name
+      ) {
         this.lastNewlineTs = 0;
+        this.lastNewlineName = '';
         return;
       }
       this.lastNewlineTs = now;
+      this.lastNewlineName = key.name;
     }
 
     // A ':' command line captures everything until Enter/Escape.
