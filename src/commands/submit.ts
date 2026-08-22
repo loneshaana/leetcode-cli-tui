@@ -27,8 +27,10 @@ export async function submitCommand(file: string): Promise<void> {
     code,
   });
 
-  const result = await client.waitForResult(submission_id, (state) =>
-    process.stderr.write(pc.dim(`  judging (${state})...\r`))
+  const result = await client.waitForResult(
+    submission_id,
+    (state) => process.stderr.write(pc.dim(`  judging (${state})...\r`)),
+    60000
   );
   process.stderr.write('\n');
   process.stdout.write(formatSubmitResult(result) + '\n');

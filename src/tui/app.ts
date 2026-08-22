@@ -516,8 +516,10 @@ export function runTui(params: TuiParams): Promise<void> {
           lang: langOf(filePath),
           code: editor.getValue(),
         });
-        const result = await client.waitForResult(submission_id, (state) =>
-          setOutput(`Judging (${state})...`)
+        const result = await client.waitForResult(
+          submission_id,
+          (state) => setOutput(`Judging (${state})...`),
+          60000
         );
         const body = formatSubmitResult(result, { color: false });
         if (result.status_msg === 'Accepted') {
@@ -595,10 +597,21 @@ export function runTui(params: TuiParams): Promise<void> {
     // Global shortcuts. Bound at screen level; the custom editor does NOT grab
     // keys (unlike blessed's textarea), so these fire even while editing.
     screen.key(['C-q', 'C-c'], quit);
-    screen.key(['C-r'], () => void doRun());
-    screen.key(['C-s'], () => void doSubmit());
+    screen.key(['C-r'], () => {
+      if (saveOpen) return;
+      // Running from the testcase popup: save & close it first so the current
+      // testcase is used and the output pane is actually visible.
+      if (tcOpen) closeTestcase(true);
+      void doRun();
+    });
+    screen.key(['C-s'], () => {
+      if (saveOpen || tcOpen) return;
+      void doSubmit();
+    });
     screen.key(['C-w'], () => saveCode());
-    screen.key(['C-e'], () => externalEdit());
+    screen.key(['C-e'], () => {
+      if (!tcOpen && !saveOpen) externalEdit();
+    });
     screen.key(['C-t'], () => (tcOpen ? closeTestcase(true) : openTestcase()));
     screen.key(['C-a'], () => (saveOpen ? closeSave() : openSave()));
     screen.key(['escape'], () => {
