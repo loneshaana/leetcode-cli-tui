@@ -85,8 +85,9 @@ Solution files are written to the workspace (default `~/leetcode-workspace`) as
 
 `leetcode tui <problem>` opens a full-screen workspace with a branded **header bar** at the
 top (⚡ LeetCode · problem id & title · color-coded difficulty · language), a segmented
-**status footer** at the bottom (a persisted per-problem timer with a `best` target, a
-saved/unsaved `●` indicator, and a colored key-hint strip), and four accent-bordered panes:
+**status footer** at the bottom (a persisted per-problem timer with a `best` target, the editor
+`Ln/Col` position, a saved/unsaved `●` indicator, and a colored key-hint strip — press `?`/`F1`
+for the full keybinding overlay), and four accent-bordered panes:
 
 - **📄 Problem** (left) — the **syntax-colored** problem description (scrollable): a cyan title,
   cyan headings, green example/code blocks, yellow inline `code` and white **bold** text.
@@ -112,6 +113,7 @@ Keybindings:
 | `Ctrl-Z` / `Ctrl-Y` | Undo / redo |
 | `Ctrl-W` | Save the file |
 | `Ctrl-P` | **Pause/resume** the problem timer |
+| `?` / `F1` | Toggle a **keybinding help overlay** (`?` works from the Problem/Output panes; `F1` anywhere) |
 | `Ctrl-E` | Open the code in your `$EDITOR` (vim/VS Code/…) and come back |
 | `F2` | Toggle **vim key bindings** on/off |
 | `Ctrl-Q` | Quit (saves first) |

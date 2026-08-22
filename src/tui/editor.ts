@@ -191,6 +191,11 @@ export class CodeEditor {
     return this.vimEnabled;
   }
 
+  /** 1-based cursor line/column and total line count, for a status indicator. */
+  cursorPosition(): { line: number; col: number; lines: number } {
+    return { line: this.cy + 1, col: this.cx + 1, lines: this.lines.length };
+  }
+
   /** A short description of the current mode for the status bar. */
   statusText(): string {
     if (!this.vimEnabled) return '';

@@ -32,7 +32,30 @@ const HELP =
   '{cyan-fg}{bold}^W{/bold}{/cyan-fg} save  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}F2{/bold}{/cyan-fg} vim  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^P{/bold}{/cyan-fg} pause  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}?{/bold}{/cyan-fg}{grey-fg}/{/grey-fg}{cyan-fg}{bold}F1{/bold}{/cyan-fg} help  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^Q{/bold}{/cyan-fg} quit';
+
+const HELP_OVERLAY =
+  '{center}{bold}{cyan-fg}⚡ LeetCode TUI — Keys{/cyan-fg}{/bold}{/center}\n\n' +
+  '  {yellow-fg}{bold}Solve{/bold}{/yellow-fg}\n' +
+  '    {cyan-fg}Ctrl-R{/cyan-fg}   Run against sample (or custom) tests\n' +
+  '    {cyan-fg}Ctrl-S{/cyan-fg}   Submit\n' +
+  '    {cyan-fg}Ctrl-T{/cyan-fg}   Open/close the custom testcase editor\n' +
+  '    {cyan-fg}F3{/cyan-fg}       Reveal the next hint\n\n' +
+  '  {yellow-fg}{bold}Editor{/bold}{/yellow-fg}\n' +
+  '    {cyan-fg}F2{/cyan-fg}       Toggle vim mode\n' +
+  '    {cyan-fg}F4{/cyan-fg}       Reset editor to starter code\n' +
+  '    {cyan-fg}Ctrl-Z/Y{/cyan-fg} Undo / redo\n' +
+  '    {cyan-fg}Ctrl-X{/cyan-fg}   Delete current line\n' +
+  '    {cyan-fg}Ctrl-E{/cyan-fg}   Edit in $EDITOR and come back\n\n' +
+  '  {yellow-fg}{bold}Files & panes{/bold}{/yellow-fg}\n' +
+  '    {cyan-fg}Tab{/cyan-fg}      Cycle panes (scroll with ↑↓/PgUp/PgDn/g/G)\n' +
+  '    {cyan-fg}Ctrl-W{/cyan-fg}   Save file    {cyan-fg}Ctrl-A{/cyan-fg} Save solution as…\n\n' +
+  '  {yellow-fg}{bold}Timer{/bold}{/yellow-fg}\n' +
+  '    {cyan-fg}Ctrl-P{/cyan-fg}   Pause / resume the problem timer\n\n' +
+  '  {yellow-fg}{bold}Session{/bold}{/yellow-fg}\n' +
+  '    {cyan-fg}Ctrl-Q{/cyan-fg}   Quit (saves first)\n\n' +
+  '{center}{grey-fg}Press F1 or Esc to close{/grey-fg}{/center}';
 
 const SPINNER = ['|', '/', '-', '\\'];
 
@@ -146,6 +169,36 @@ export function runTui(params: TuiParams): Promise<void> {
       style: { fg: 'white', bg: '#26263b' },
       content: HELP,
     });
+
+    // ---- Keybinding help overlay (hidden until "?") ------------------------
+    const helpPopup = blessed.box({
+      parent: screen,
+      hidden: true,
+      top: 'center',
+      left: 'center',
+      width: 60,
+      height: 28,
+      border: { type: 'line' },
+      tags: true,
+      padding: { left: 1, right: 1 },
+      style: { border: { fg: 'cyan' }, bg: 'black' },
+      content: HELP_OVERLAY,
+    });
+    let helpOpen = false;
+    function toggleHelp(): void {
+      helpOpen = !helpOpen;
+      if (helpOpen) {
+        helpPopup.show();
+        helpPopup.setFront();
+        // Focus the overlay so keystrokes don't fall through to the editor.
+        helpPopup.focus();
+        screen.program.hideCursor();
+        screen.render();
+      } else {
+        helpPopup.hide();
+        focusPane(current);
+      }
+    }
 
     // ---- Custom testcase popup (hidden until Ctrl-T) -----------------------
     const tcPopup = blessed.box({
@@ -324,13 +377,19 @@ export function runTui(params: TuiParams): Promise<void> {
         : `{yellow-fg}{bold}⏱ ${clock()}{/bold}{/yellow-fg}`;
       const pb = loadConfig().bestTimes?.[timerSlug];
       const best = pb ? ` {grey-fg}·{/grey-fg} {magenta-fg}best ${formatDuration(pb)}{/magenta-fg}` : '';
+      const pos = editor.isFocused()
+        ? (() => {
+            const c = editor.cursorPosition();
+            return ` {grey-fg}·{/grey-fg} {cyan-fg}Ln ${c.line}/${c.lines}, Col ${c.col}{/cyan-fg}`;
+          })()
+        : '';
       const mode = vimStatus
         ? ` {yellow-bg}{black-fg} ${vimStatus} {/black-fg}{/yellow-bg}`
         : '';
       const flag = dirty
         ? ` {red-fg}●{/red-fg}{grey-fg} unsaved{/grey-fg}`
         : ` {green-fg}●{/green-fg}{grey-fg} saved{/grey-fg}`;
-      status.setContent(` ${time}${best}${mode}${flag}  {grey-fg}│{/grey-fg}  ${HELP} `);
+      status.setContent(` ${time}${best}${pos}${mode}${flag}  {grey-fg}│{/grey-fg}  ${HELP} `);
       screen.render();
       placeCaret();
     }
@@ -641,30 +700,46 @@ export function runTui(params: TuiParams): Promise<void> {
     // keys (unlike blessed's textarea), so these fire even while editing.
     screen.key(['C-q', 'C-c'], quit);
     screen.key(['C-r'], () => {
-      if (saveOpen) return;
+      if (saveOpen || helpOpen) return;
       // Running from the testcase popup: save & close it first so the current
       // testcase is used and the output pane is actually visible.
       if (tcOpen) closeTestcase(true);
       void doRun();
     });
     screen.key(['C-s'], () => {
-      if (saveOpen || tcOpen) return;
+      if (saveOpen || tcOpen || helpOpen) return;
       void doSubmit();
     });
     screen.key(['C-w'], () => saveCode());
+    screen.key(['f1'], () => {
+      if (!tcOpen && !saveOpen) toggleHelp();
+    });
+    screen.key(['?'], () => {
+      // Bare "?" is a literal character in the editor, so only treat it as the
+      // help toggle when a non-editor pane (Problem/Output) has focus.
+      if (!editor.isFocused() && !tcOpen && !saveOpen) toggleHelp();
+    });
     screen.key(['C-p'], () => {
       if (!saveOpen) toggleTimer();
     });
     screen.key(['C-e'], () => {
-      if (!tcOpen && !saveOpen) externalEdit();
+      if (!tcOpen && !saveOpen && !helpOpen) externalEdit();
     });
-    screen.key(['C-t'], () => (tcOpen ? closeTestcase(true) : openTestcase()));
-    screen.key(['C-a'], () => (saveOpen ? closeSave() : openSave()));
+    screen.key(['C-t'], () => {
+      if (helpOpen) return;
+      return tcOpen ? closeTestcase(true) : openTestcase();
+    });
+    screen.key(['C-a'], () => {
+      if (helpOpen) return;
+      return saveOpen ? closeSave() : openSave();
+    });
     screen.key(['escape'], () => {
-      if (tcOpen) closeTestcase(true);
+      if (helpOpen) toggleHelp();
+      else if (tcOpen) closeTestcase(true);
       else if (saveOpen) closeSave();
     });
     screen.key(['C-x'], () => {
+      if (helpOpen) return;
       if (tcOpen) {
         tcEditor.setValue('');
         tcEditor.focus();
@@ -674,28 +749,29 @@ export function runTui(params: TuiParams): Promise<void> {
       }
     });
     screen.key(['C-z'], () => {
-      if (!tcOpen && !saveOpen && editor.isFocused()) editor.undoAction();
+      if (!tcOpen && !saveOpen && !helpOpen && editor.isFocused()) editor.undoAction();
     });
     screen.key(['C-y'], () => {
-      if (!tcOpen && !saveOpen && editor.isFocused()) editor.redoAction();
+      if (!tcOpen && !saveOpen && !helpOpen && editor.isFocused()) editor.redoAction();
     });
     screen.key(['S-tab'], () => {
-      if (!tcOpen && !saveOpen) focusPane(current + 1);
+      if (!tcOpen && !saveOpen && !helpOpen) focusPane(current + 1);
     });
     screen.key(['f6'], () => {
-      if (!tcOpen && !saveOpen) focusPane(current + 1);
+      if (!tcOpen && !saveOpen && !helpOpen) focusPane(current + 1);
     });
     screen.key(['f2'], () => {
+      if (helpOpen) return;
       editor.setVim(!editor.isVim());
       if (!editor.isVim()) setVimStatus('');
       focusPane(1);
       setOutput(editor.isVim() ? 'Vim mode ON (Esc = normal, i = insert, :w save, :q quit)' : 'Vim mode OFF');
     });
     screen.key(['f3'], () => {
-      if (!tcOpen && !saveOpen) showNextHint();
+      if (!tcOpen && !saveOpen && !helpOpen) showNextHint();
     });
     screen.key(['f4'], () => {
-      if (!tcOpen && !saveOpen) resetEditor();
+      if (!tcOpen && !saveOpen && !helpOpen) resetEditor();
     });
 
     // Initial paint, then load code and focus the editor.
