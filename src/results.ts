@@ -28,11 +28,14 @@ export function formatRunResult(r: JudgeResult, opts: { color?: boolean } = {}):
 
   const got = asLines(r.code_answer);
   const expected = asLines(r.expected_code_answer);
-  const stdout = asLines(r.std_output).filter(Boolean);
+  const stdoutList = asLines(r.std_output_list);
+  const stdout = (stdoutList.length ? stdoutList : asLines(r.std_output))
+    .map((s) => s.replace(/\n+$/, ''))
+    .filter(Boolean);
 
   if (got.length) out.push(c.bold('Output:  ') + got.join(' | '));
   if (expected.length) out.push(c.bold('Expected:') + ' ' + expected.join(' | '));
-  if (stdout.length) out.push(c.dim('Stdout:  ' + stdout.join(' | ')));
+  if (stdout.length) out.push(c.dim('Stdout:  ' + stdout.join('  |  ')));
   if (r.status_runtime) out.push(c.dim('Runtime: ' + r.status_runtime));
   return out.join('\n');
 }

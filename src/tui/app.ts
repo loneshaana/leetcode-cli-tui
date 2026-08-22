@@ -14,8 +14,6 @@ import { formatRunResult, formatSubmitResult } from '../results';
 import { CodeEditor } from './editor';
 import { loadConfig, recordSolved, recordSolveTime, computeStats } from '../config';
 import { acceptedBannerTags, encouragementTags, welcomeTags, newlyUnlocked } from './fun';
-import { openBrowser } from '../util/open';
-import { loadImageArt } from './image';
 
 export interface TuiParams {
   client: LeetCodeClient;
@@ -30,7 +28,6 @@ const HELP =
   '{cyan-fg}{bold}^T{/bold}{/cyan-fg} test  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}F3{/bold}{/cyan-fg} hint  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}F4{/bold}{/cyan-fg} reset  {grey-fg}·{/grey-fg}  ' +
-  '{cyan-fg}{bold}F5{/bold}{/cyan-fg} images  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^A{/bold}{/cyan-fg} save-as  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^W{/bold}{/cyan-fg} save  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}F2{/bold}{/cyan-fg} vim  {grey-fg}·{/grey-fg}  ' +
@@ -60,20 +57,6 @@ export function runTui(params: TuiParams): Promise<void> {
       content: buildHeader(problem, langOf(filePath)),
     });
 
-    // Problem images: rendered inline as half-block art (see composeDescription)
-    // and openable full-size in the browser with F5.
-    const descParts = buildDescriptionParts(problem);
-    const imageUrls = descParts.imageUrls;
-    const imageArt: string[] = imageUrls.map((u, k) => imagePlaceholder(k, u));
-    let destroyed = false;
-    const composeDescription = (): string => {
-      let s = descParts.content;
-      for (let k = 0; k < imageArt.length; k++) {
-        s = s.split(IMG_SENTINEL(k)).join('\n' + imageArt[k] + '\n');
-      }
-      return s;
-    };
-
     const descBox = blessed.box({
       parent: screen,
       label: ' 📄 Problem ',
@@ -90,7 +73,7 @@ export function runTui(params: TuiParams): Promise<void> {
       tags: true,
       scrollbar: { ch: ' ', track: { bg: 'grey' }, style: { bg: 'cyan' } },
       style: { border: { fg: 'blue' }, focus: { border: { fg: 'cyan' } } },
-      content: composeDescription(),
+      content: buildDescription(problem),
     });
 
     // Colored metadata (difficulty + tags) pinned at the bottom of the left pane.
@@ -601,7 +584,6 @@ export function runTui(params: TuiParams): Promise<void> {
         clockTimer = null;
       }
       if (dirty) saveCode();
-      destroyed = true;
       screen.program.showCursor();
       screen.destroy();
       resolve();
@@ -656,15 +638,6 @@ export function runTui(params: TuiParams): Promise<void> {
     screen.key(['f4'], () => {
       if (!tcOpen && !saveOpen) resetEditor();
     });
-    screen.key(['f5'], () => {
-      if (tcOpen || saveOpen) return;
-      if (imageUrls.length === 0) {
-        setOutput('This problem has no images.');
-        return;
-      }
-      imageUrls.forEach((u) => openBrowser(u));
-      setOutput(`Opening ${imageUrls.length} image(s) in your default browser…`);
-    });
 
     // Initial paint, then load code and focus the editor.
     screen.render();
@@ -672,27 +645,9 @@ export function runTui(params: TuiParams): Promise<void> {
     focusPane(1);
     resetStatus();
     setRichOutput(welcomeTags(`${problem.frontendId}. ${problem.title}`));
-    loadInlineImages();
     clockTimer = setInterval(() => {
       if (!busy) renderStatusBar();
     }, 1000);
-
-    // Fetch and render each problem image as half-block art, patching the
-    // description pane in place as each one arrives. Failures fall back to a
-    // plain link (still openable with F5).
-    function loadInlineImages(): void {
-      if (imageUrls.length === 0) return;
-      const w = (screen.width as unknown as number) || 80;
-      const cols = Math.max(16, Math.min(56, Math.floor(w * 0.5) - 6));
-      imageUrls.forEach((url, k) => {
-        void loadImageArt(url, cols).then((lines) => {
-          if (destroyed) return;
-          imageArt[k] = lines && lines.length ? frameImageArt(lines, k) : imageFallback(k, url);
-          descBox.setContent(composeDescription());
-          screen.render();
-        });
-      });
-    }
   });
 }
 
@@ -709,6 +664,7 @@ function buildRunTable(r: JudgeResult, dataInput: string): string | null {
     !v ? [] : Array.isArray(v) ? v : [v];
   const got = norm(r.code_answer);
   const expected = norm(r.expected_code_answer);
+  const stdoutList = norm(r.std_output_list);
   const stdout = norm(r.std_output);
   const inputs = dataInput ? dataInput.split('\n') : [];
   const n = Math.max(got.length, expected.length);
@@ -745,8 +701,17 @@ function buildRunTable(r: JudgeResult, dataInput: string): string | null {
     if (inputs[i]) {
       lines.push('{grey-fg}' + blessed.escape('    in: ' + inputs[i].replace(/\s+/g, ' ')) + '{/grey-fg}');
     }
+    const caseLog = stdoutList[i];
+    if (caseLog && caseLog.trim()) {
+      const logLines = caseLog.replace(/\n+$/, '').split('\n');
+      logLines.forEach((ll, li) => {
+        const prefix = li === 0 ? '   log: ' : '        ';
+        lines.push('{cyan-fg}' + blessed.escape(prefix + ll) + '{/cyan-fg}');
+      });
+    }
   }
-  const extraStdout = stdout.filter(Boolean);
+  // Fall back to the aggregate stdout only when there is no per-case list.
+  const extraStdout = (stdoutList.length ? [] : stdout).filter(Boolean);
   if (extraStdout.length) {
     lines.push('');
     lines.push('{grey-fg}' + blessed.escape('stdout: ' + extraStdout.join(' | ')) + '{/grey-fg}');
@@ -768,31 +733,7 @@ function buildHeader(problem: Problem, lang: string): string {
   );
 }
 
-/** Unique, escape-safe marker used to reserve an image's spot in the text. */
-const IMG_SENTINEL = (k: number): string => `\uE000IMG${k}\uE000`;
-
-function imagePlaceholder(k: number, _url: string): string {
-  return `{grey-fg}🖼  image ${k + 1} — rendering… (press F5 to open it in your browser){/grey-fg}`;
-}
-
-function frameImageArt(lines: string[], k: number): string {
-  const caption = `{grey-fg}🖼  image ${k + 1} — press F5 for the full-size version{/grey-fg}`;
-  return lines.join('\n') + '\n' + caption;
-}
-
-function imageFallback(k: number, url: string): string {
-  return (
-    `{blue-fg}🖼  image ${k + 1}: ${blessed.escape(url)}{/blue-fg} ` +
-    `{grey-fg}(press F5 to open){/grey-fg}`
-  );
-}
-
-/**
- * Build the colored problem description plus the list of image URLs it
- * contains. Each image is replaced in the text with a sentinel marker so the
- * TUI can splice inline art (or a link) into the exact right spot later.
- */
-function buildDescriptionParts(problem: Problem): { content: string; imageUrls: string[] } {
+function buildDescription(problem: Problem): string {
   const title = blessed.escape(`${problem.frontendId}. ${problem.title}`);
   const url = blessed.escape(`https://leetcode.com/problems/${problem.titleSlug}/`);
   const head = [
@@ -801,15 +742,7 @@ function buildDescriptionParts(problem: Problem): { content: string; imageUrls: 
     '',
     '',
   ].join('\n');
-  const imageUrls: string[] = [];
-  const md = htmlToText(problem.content).replace(
-    /!\[[^\]]*\]\(([^)\s]+)[^)]*\)/g,
-    (_m, src: string) => {
-      imageUrls.push(src);
-      return IMG_SENTINEL(imageUrls.length - 1);
-    }
-  );
-  return { content: head + colorizeDescription(md), imageUrls };
+  return head + colorizeDescription(htmlToText(problem.content));
 }
 
 /**

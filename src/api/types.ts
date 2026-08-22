@@ -51,6 +51,9 @@ export interface JudgeResult {
   expected_code_answer?: string[];
   code_output?: string[] | string;
   std_output?: string[] | string;
+  // Per-test-case captured stdout (user print/println logs) on a run.
+  std_output_list?: string[];
+  expected_std_output_list?: string[];
   // submit fields
   total_correct?: number | null;
   total_testcases?: number | null;
