@@ -11,10 +11,39 @@ Built with Node.js + TypeScript. Default solution language is **Java** (configur
 
 ## Install
 
+### From npm (recommended)
+
+Install it globally so the `leetcode` command is available in every terminal:
+
 ```bash
+npm install -g leetcode-cli-tui
+```
+
+Then just run `leetcode` from any directory:
+
+```bash
+leetcode --help
+leetcode tui two-sum
+```
+
+The global install puts the `leetcode` binary on your `PATH`, so it works in any
+**new** terminal tab or window. Already-open tabs may need a reload to see it
+(`hash -r` in bash/zsh, `rehash` in fish, or simply open a new tab). Update later
+with `npm update -g leetcode-cli-tui`, and check the version with `leetcode --version`.
+
+> Requires Node.js >= 18. If a global install complains about permissions, either use a
+> Node version manager (nvm/fnm/volta) or set a user-writable npm prefix
+> (`npm config set prefix ~/.npm-global` and add `~/.npm-global/bin` to your `PATH`).
+> On Windows the npm global folder is already on `PATH` by default.
+
+### From source
+
+```bash
+git clone https://github.com/loneshaana/leetcode-cli-tui
+cd leetcode-cli-tui
 npm install
 npm run build
-npm link          # optional: makes the `leetcode` command available globally
+npm link          # makes the `leetcode` command available globally
 ```
 
 If you don't `npm link`, run commands as `node dist/index.js <command>`.
@@ -58,6 +87,7 @@ leetcode show two-sum -L python3    # override language
 leetcode show two-sum -o            # also print the description
 
 leetcode tui two-sum                # <-- the split-pane editor experience
+leetcode tui 1                      # by frontend id (also: a URL, or "daily")
 leetcode edit two-sum               # alias for tui
 
 leetcode run  <file>                # run against the sample test cases

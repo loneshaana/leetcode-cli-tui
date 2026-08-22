@@ -1,13 +1,25 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import * as log from './util/log';
 
 const program = new Command();
 
+/** Read the version from package.json so `--version` never goes stale. */
+function pkgVersion(): string {
+  try {
+    const raw = readFileSync(join(__dirname, '..', 'package.json'), 'utf8');
+    return (JSON.parse(raw) as { version?: string }).version || '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
 program
   .name('leetcode')
   .description('Work with LeetCode problems from your terminal: fetch, edit in a split-pane TUI, run and submit.')
-  .version('0.1.0');
+  .version(pkgVersion());
 
 program
   .command('login')

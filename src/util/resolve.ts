@@ -21,11 +21,10 @@ export async function resolveProblem(client: LeetCodeClient, ref: string): Promi
 
   // Numeric frontend id -> look it up via search.
   if (/^\d+$/.test(trimmed)) {
-    const res = await client.listProblems({ limit: 1, skip: 0, search: trimmed });
+    const res = await client.listProblems({ limit: 50, skip: 0, search: trimmed });
     const exact = res.questions.find((q) => q.frontendId === trimmed);
-    const chosen = exact || res.questions[0];
-    if (!chosen) throw new Error(`No problem found with id ${trimmed}`);
-    return client.getProblem(chosen.titleSlug);
+    if (!exact) throw new Error(`No problem found with id ${trimmed}`);
+    return client.getProblem(exact.titleSlug);
   }
 
   // Assume it's already a slug.
