@@ -85,8 +85,8 @@ Solution files are written to the workspace (default `~/leetcode-workspace`) as
 
 `leetcode tui <problem>` opens a full-screen workspace with a branded **header bar** at the
 top (⚡ LeetCode · problem id & title · color-coded difficulty · language), a segmented
-**status footer** at the bottom (elapsed timer, a saved/unsaved `●` indicator, and a colored
-key-hint strip), and four accent-bordered panes:
+**status footer** at the bottom (a persisted per-problem timer with a `best` target, a
+saved/unsaved `●` indicator, and a colored key-hint strip), and four accent-bordered panes:
 
 - **📄 Problem** (left) — the **syntax-colored** problem description (scrollable): a cyan title,
   cyan headings, green example/code blocks, yellow inline `code` and white **bold** text.
@@ -111,6 +111,7 @@ Keybindings:
 | `Ctrl-X` | Delete the current line |
 | `Ctrl-Z` / `Ctrl-Y` | Undo / redo |
 | `Ctrl-W` | Save the file |
+| `Ctrl-P` | **Pause/resume** the problem timer |
 | `Ctrl-E` | Open the code in your `$EDITOR` (vim/VS Code/…) and come back |
 | `F2` | Toggle **vim key bindings** on/off |
 | `Ctrl-Q` | Quit (saves first) |
@@ -179,11 +180,15 @@ Coding should feel good, so the CLI adds a few bits of delight:
 - A near miss shows a quick **encouragement** instead of just a wall of red.
 - Every accepted problem bumps your **solved counter** (stored in the config) so you can
   watch your streak grow.
-- A live **session timer** ticks away in the status bar while you work.
+- A **per-problem timer** ticks in the status bar and **persists** — close and reopen a problem
+  and it resumes from where you left off. **Press `^P` to pause/resume** (so reading or stepping
+  away doesn't inflate your time), and the bar also shows your `best` time as a target.
 - Getting Accepted also reports your **solve time**, flags a new **personal best** (⚡), and
   can **ring the terminal bell** (toggle with `leetcode config --bell off`).
 - Unlock **achievement badges** as you rack up solves, streaks and fast finishes — earned
   badges show on the accepted banner and in `leetcode stats`.
+- `leetcode stats` shows your solved counts, streaks and a **difficulty breakdown**, plus your
+  **fastest/average solve times** and a **last-30-days activity heatmap**.
 - **Run results** come back as a colored per-test-case table (green pass / red fail) so you
   can see exactly which case broke.
 - Stuck? Press **F3** in the TUI to reveal the problem's hints one at a time.

@@ -12,7 +12,7 @@ import {
 } from '../solution';
 import { formatRunResult, formatSubmitResult } from '../results';
 import { CodeEditor } from './editor';
-import { loadConfig, recordSolved, recordSolveTime, computeStats } from '../config';
+import { loadConfig, recordSolved, recordSolveTime, recordTimeSpent, formatDuration, computeStats } from '../config';
 import { acceptedBannerTags, encouragementTags, welcomeTags, newlyUnlocked } from './fun';
 
 export interface TuiParams {
@@ -31,6 +31,7 @@ const HELP =
   '{cyan-fg}{bold}^A{/bold}{/cyan-fg} save-as  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^W{/bold}{/cyan-fg} save  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}F2{/bold}{/cyan-fg} vim  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}^P{/bold}{/cyan-fg} pause  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^Q{/bold}{/cyan-fg} quit';
 
 const SPINNER = ['|', '/', '-', '\\'];
@@ -226,7 +227,44 @@ export function runTui(params: TuiParams): Promise<void> {
     let vimStatus = '';
     let spinnerTimer: NodeJS.Timeout | null = null;
     let clockTimer: NodeJS.Timeout | null = null;
-    const startTs = Date.now();
+    // Pausable, persisted timer. `baseElapsed` is time carried over from prior
+    // sessions on this problem; `accumulated` is counted time this session while
+    // running; `runningSince` marks the current running segment (null = paused).
+    const timerSlug = problem.titleSlug;
+    const baseElapsed = loadConfig().timeSpent?.[timerSlug] ?? 0;
+    let accumulated = 0;
+    let runningSince: number | null = Date.now();
+
+    function sessionSeconds(): number {
+      const live = runningSince ? Math.floor((Date.now() - runningSince) / 1000) : 0;
+      return accumulated + live;
+    }
+    function totalSeconds(): number {
+      return baseElapsed + sessionSeconds();
+    }
+    function persistTime(): void {
+      recordTimeSpent(timerSlug, totalSeconds());
+    }
+    function pauseTimer(): void {
+      if (runningSince) {
+        accumulated += Math.floor((Date.now() - runningSince) / 1000);
+        runningSince = null;
+        persistTime();
+      }
+    }
+    function resumeTimer(): void {
+      if (!runningSince) runningSince = Date.now();
+    }
+    function toggleTimer(): void {
+      if (runningSince) {
+        pauseTimer();
+        setOutput('⏸  Timer paused. Press ^P to resume.');
+      } else {
+        resumeTimer();
+        setOutput('▶  Timer resumed.');
+      }
+      renderStatusBar();
+    }
 
     function refresh(): void {
       screen.render();
@@ -276,20 +314,23 @@ export function runTui(params: TuiParams): Promise<void> {
     }
 
     function clock(): string {
-      const s = Math.floor((Date.now() - startTs) / 1000);
-      const m = Math.floor(s / 60);
-      return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+      return formatDuration(totalSeconds());
     }
 
     function renderStatusBar(): void {
-      const time = `{yellow-fg}{bold}⏱ ${clock()}{/bold}{/yellow-fg}`;
+      const paused = runningSince === null;
+      const time = paused
+        ? `{grey-fg}{bold}⏸ ${clock()} paused{/bold}{/grey-fg}`
+        : `{yellow-fg}{bold}⏱ ${clock()}{/bold}{/yellow-fg}`;
+      const pb = loadConfig().bestTimes?.[timerSlug];
+      const best = pb ? ` {grey-fg}·{/grey-fg} {magenta-fg}best ${formatDuration(pb)}{/magenta-fg}` : '';
       const mode = vimStatus
         ? ` {yellow-bg}{black-fg} ${vimStatus} {/black-fg}{/yellow-bg}`
         : '';
       const flag = dirty
         ? ` {red-fg}●{/red-fg}{grey-fg} unsaved{/grey-fg}`
         : ` {green-fg}●{/green-fg}{grey-fg} saved{/grey-fg}`;
-      status.setContent(` ${time}${mode}${flag}  {grey-fg}│{/grey-fg}  ${HELP} `);
+      status.setContent(` ${time}${best}${mode}${flag}  {grey-fg}│{/grey-fg}  ${HELP} `);
       screen.render();
       placeCaret();
     }
@@ -525,7 +566,8 @@ export function runTui(params: TuiParams): Promise<void> {
         if (result.status_msg === 'Accepted') {
           const before = computeStats();
           const solved = recordSolved(problem.titleSlug, problem.difficulty);
-          const elapsed = Math.floor((Date.now() - startTs) / 1000);
+          const elapsed = sessionSeconds();
+          persistTime();
           const { best, isPB } = recordSolveTime(problem.titleSlug, elapsed);
           const badges = newlyUnlocked(before, computeStats());
           if (loadConfig().bell !== false) screen.program.bell();
@@ -585,6 +627,7 @@ export function runTui(params: TuiParams): Promise<void> {
         clearInterval(clockTimer);
         clockTimer = null;
       }
+      persistTime();
       if (dirty) saveCode();
       screen.program.showCursor();
       screen.destroy();
@@ -609,6 +652,9 @@ export function runTui(params: TuiParams): Promise<void> {
       void doSubmit();
     });
     screen.key(['C-w'], () => saveCode());
+    screen.key(['C-p'], () => {
+      if (!saveOpen) toggleTimer();
+    });
     screen.key(['C-e'], () => {
       if (!tcOpen && !saveOpen) externalEdit();
     });

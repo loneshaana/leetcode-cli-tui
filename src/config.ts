@@ -30,6 +30,8 @@ export interface Config {
   solveLog?: SolveEntry[];
   /** Best solve time in seconds, per problem slug. */
   bestTimes?: Record<string, number>;
+  /** Cumulative focused time in seconds spent per problem slug (persisted timer). */
+  timeSpent?: Record<string, number>;
 }
 
 /** One Accepted submission, recorded for streaks and difficulty stats. */
@@ -115,6 +117,30 @@ export function recordSolveTime(slug: string, seconds: number): { best: number; 
     saveConfig({ ...cfg, bestTimes: times });
   }
   return { best: times[slug] ?? seconds, isPB };
+}
+
+/**
+ * Persist the cumulative focused time (seconds) spent on a problem. The TUI
+ * timer passes an absolute running total (prior stored time + this session), so
+ * reopening a problem resumes from where you left off. Returns the stored total.
+ */
+export function recordTimeSpent(slug: string, totalSeconds: number): number {
+  const cfg = loadConfig();
+  const times = { ...(cfg.timeSpent || {}) };
+  const next = Math.max(Math.round(totalSeconds), times[slug] ?? 0);
+  times[slug] = next;
+  saveConfig({ ...cfg, timeSpent: times });
+  return next;
+}
+
+/** Format a duration in seconds as `MM:SS`, or `H:MM:SS` past an hour. */
+export function formatDuration(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
 }
 
 /** Format a Date as a local YYYY-MM-DD calendar day. */
