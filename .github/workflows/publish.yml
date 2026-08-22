@@ -25,10 +25,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Node.js
+        # NOTE: deliberately NO `registry-url` here. Passing it makes
+        # actions/setup-node write a temp .npmrc containing
+        #   //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+        # and point NPM_CONFIG_USERCONFIG at it. With no token set, npm sees a
+        # configured-but-empty auth token and SKIPS OIDC trusted publishing,
+        # failing with E404. Omitting registry-url leaves auth unconfigured so
+        # npm performs the OIDC exchange. Registry defaults to npmjs.org.
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
 
       # Trusted publishing needs npm >= 11.5.1; the bundled npm is older.
       - name: Upgrade npm (OIDC support)
@@ -41,4 +47,4 @@ jobs:
         run: npm run build
 
       - name: Publish (OIDC, no token)
-        run: npm publish --access public
+        run: npm publish --access public --registry https://registry.npmjs.org
