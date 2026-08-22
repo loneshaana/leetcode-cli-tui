@@ -90,12 +90,12 @@ export interface Theme {
 }
 
 export const THEMES: Record<string, Theme> = {
-  default: { keyword: 'yellow-fg', string: 'green-fg', number: 'magenta-fg', comment: 'grey-fg' },
+  default: { keyword: 'yellow-fg', string: 'green-fg', number: 'magenta-fg', comment: '#8a8a8a-fg' },
   dracula: { keyword: '#ff79c6-fg', string: '#f1fa8c-fg', number: '#bd93f9-fg', comment: '#6272a4-fg' },
   monokai: { keyword: '#f92672-fg', string: '#e6db74-fg', number: '#ae81ff-fg', comment: '#75715e-fg' },
   solarized: { keyword: '#859900-fg', string: '#2aa198-fg', number: '#d33682-fg', comment: '#93a1a1-fg' },
   neon: { keyword: '#39ff14-fg', string: '#00ffff-fg', number: '#ff00ff-fg', comment: '#4d9999-fg' },
-  mono: { keyword: 'white-fg', string: 'grey-fg', number: 'white-fg', comment: 'grey-fg' },
+  mono: { keyword: 'white-fg', string: '#b0b0b0-fg', number: 'white-fg', comment: '#8a8a8a-fg' },
 };
 
 export function themeNames(): string[] {
