@@ -738,10 +738,10 @@ function buildRunTable(r: JudgeResult, dataInput: string): string | null {
 function buildHeader(problem: Problem, lang: string): string {
   const sep = '{grey-fg}│{/grey-fg}';
   const id = blessed.escape(`${problem.frontendId}. ${problem.title}`);
-  const diff = colorDifficulty(problem.difficulty);
+  const diffSeg = loadConfig().tags === false ? '' : `${colorDifficulty(problem.difficulty)}  ${sep}  `;
   return (
     ` {yellow-fg}{bold}⚡ LeetCode{/bold}{/yellow-fg}  ${sep}  ` +
-    `{white-fg}{bold}${id}{/bold}{/white-fg}  ${sep}  ${diff}  ${sep}  ` +
+    `{white-fg}{bold}${id}{/bold}{/white-fg}  ${sep}  ${diffSeg}` +
     `{cyan-fg}${blessed.escape(lang)}{/cyan-fg}`
   );
 }
@@ -819,11 +819,12 @@ function colorizeInline(line: string): string {
 
 /** Colored difficulty + tags line for the bottom info panel. */
 function buildMeta(problem: Problem): string {
+  if (loadConfig().tags === false) {
+    // Tags off hides both the tags and the difficulty (an approach spoiler).
+    return '{grey-fg}Difficulty & tags hidden — show with: leetcode config --tags on{/grey-fg}';
+  }
   const diff = colorDifficulty(problem.difficulty);
   const paid = problem.isPaidOnly ? '  {red-fg}[Premium]{/red-fg}' : '';
-  if (loadConfig().tags === false) {
-    return `{bold}Difficulty:{/bold} ${diff}${paid}`;
-  }
   const tags = problem.topicTags.length
     ? problem.topicTags.map((t) => `{cyan-fg}${blessed.escape(t.name)}{/cyan-fg}`).join('  ')
     : '{grey-fg}none{/grey-fg}';

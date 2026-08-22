@@ -69,7 +69,7 @@ leetcode config                     # view settings
 leetcode config -L cpp              # set default language
 leetcode config -w D:\lc            # set workspace directory
 leetcode config --theme dracula     # editor syntax theme
-leetcode config --tags off          # hide problem topic tags (avoid spoilers)
+leetcode config --tags off          # hide topic tags + difficulty (avoid spoilers)
 
 leetcode stats                      # solved count, streaks & difficulty breakdown
 leetcode random                     # pick a random problem (alias: rand)
@@ -188,8 +188,9 @@ Coding should feel good, so the CLI adds a few bits of delight:
   can see exactly which case broke.
 - Stuck? Press **F3** in the TUI to reveal the problem's hints one at a time.
 - Pick your **syntax theme** with `leetcode config --theme <default|dracula|monokai|solarized|neon|mono>`.
-- Prefer to solve without hints? **Hide the topic tags** with `leetcode config --tags off` (they show in
-  the TUI Info panel and `leetcode show` by default).
+- Prefer to solve without hints? Turn off `tags` with `leetcode config --tags off` to **hide both
+  the topic tags and the difficulty** (in the TUI header + Info panel and in `leetcode show`). Both
+  are shown by default.
 - `leetcode random` rolls the dice for a fresh problem; `leetcode review` uses
   **spaced repetition** to remind you which solved problems are due for another look.
 - `leetcode stats` shows your **daily streak** (🔥), best streak, today's count and a colored
