@@ -70,6 +70,7 @@ program
   .option('-w, --workspace <dir>', 'Set the workspace directory')
   .option('--vim <state>', 'Enable vim key bindings in the TUI editor (on|off)')
   .option('--bell <state>', 'Ring the terminal bell on Accepted (on|off)')
+  .option('--tags <state>', 'Show problem topic tags in the TUI Info panel (on|off)')
   .option('--theme <name>', 'Editor syntax theme (default|dracula|monokai|solarized|neon|mono)')
   .action(lazy(() => import('./commands/config.js'), 'configCommand'));
 

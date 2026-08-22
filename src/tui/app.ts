@@ -821,6 +821,9 @@ function colorizeInline(line: string): string {
 function buildMeta(problem: Problem): string {
   const diff = colorDifficulty(problem.difficulty);
   const paid = problem.isPaidOnly ? '  {red-fg}[Premium]{/red-fg}' : '';
+  if (loadConfig().tags === false) {
+    return `{bold}Difficulty:{/bold} ${diff}${paid}`;
+  }
   const tags = problem.topicTags.length
     ? problem.topicTags.map((t) => `{cyan-fg}${blessed.escape(t.name)}{/cyan-fg}`).join('  ')
     : '{grey-fg}none{/grey-fg}';

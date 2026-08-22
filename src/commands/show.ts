@@ -25,7 +25,7 @@ export async function showCommand(ref: string, opts: ShowOptions): Promise<void>
     `\n${pc.bold(`${problem.frontendId}. ${problem.title}`)}  ${difficultyColor(problem.difficulty)}\n`
   );
   process.stderr.write(pc.dim(`https://leetcode.com/problems/${problem.titleSlug}/\n`));
-  if (problem.topicTags.length) {
+  if (problem.topicTags.length && config.tags !== false) {
     process.stderr.write(pc.dim(`Tags: ${problem.topicTags.map((t) => t.name).join(', ')}\n`));
   }
 

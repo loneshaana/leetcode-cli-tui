@@ -22,6 +22,8 @@ export interface Config {
   theme?: string;
   /** Ring the terminal bell on an Accepted submission (default true). */
   bell?: boolean;
+  /** Show the problem's topic tags in the TUI Info panel (default true). */
+  tags?: boolean;
   /** Slugs of problems you've had Accepted (for the solved counter). */
   solved?: string[];
   /** Chronological log of Accepted submissions (for streaks & stats). */

@@ -9,6 +9,7 @@ interface ConfigOptions {
   workspace?: string;
   vim?: string;
   bell?: string;
+  tags?: string;
   theme?: string;
 }
 
@@ -42,6 +43,15 @@ export async function configCommand(opts: ConfigOptions): Promise<void> {
     updateConfig({ bell: enabled });
     changed.push(`bell = ${enabled ? 'on' : 'off'}`);
   }
+  if (opts.tags !== undefined) {
+    const v = opts.tags.trim().toLowerCase();
+    if (!['on', 'off', 'true', 'false'].includes(v)) {
+      throw new Error('--tags expects "on" or "off"');
+    }
+    const enabled = v === 'on' || v === 'true';
+    updateConfig({ tags: enabled });
+    changed.push(`tags = ${enabled ? 'on' : 'off'}`);
+  }
   if (opts.theme !== undefined) {
     const t = opts.theme.trim().toLowerCase();
     const names = themeNames();
@@ -62,6 +72,7 @@ export async function configCommand(opts: ConfigOptions): Promise<void> {
   process.stdout.write(`  workspace: ${cfg.workspace}\n`);
   process.stdout.write(`  vim mode:  ${cfg.vim ? pc.green('on') : 'off'}\n`);
   process.stdout.write(`  bell:      ${cfg.bell === false ? 'off' : pc.green('on')}\n`);
+  process.stdout.write(`  tags:      ${cfg.tags === false ? 'off' : pc.green('on')}\n`);
   process.stdout.write(`  theme:     ${cfg.theme || 'default'} ${pc.dim(`(${themeNames().join(', ')})`)}\n`);
   process.stdout.write(`  logged in: ${cfg.cookies?.session ? pc.green('yes') : pc.red('no')}\n`);
   if (cfg.cookies?.capturedAt) {
