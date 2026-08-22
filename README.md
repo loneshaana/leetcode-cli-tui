@@ -89,6 +89,8 @@ key-hint strip), and four accent-bordered panes:
 
 - **📄 Problem** (left) — the **syntax-colored** problem description (scrollable): a cyan title,
   cyan headings, green example/code blocks, yellow inline `code` and white **bold** text.
+  Any **PNG diagrams** in the statement are rendered inline as colored half-block art right
+  where they appear (press `F5` to open the full-size images in your browser).
 - **ℹ Info** (bottom left) — a panel pinned under the description showing the **difficulty**
   (green/yellow/red) and **tags**.
 - **📝 Editor** (top right) — a code editor pre-filled with the starter code.
@@ -106,6 +108,7 @@ Keybindings:
 | `Ctrl-T` | Open/close the **custom testcase** editor |
 | `F3` | Reveal the next **hint** for the problem |
 | `F4` | **Reset the editor** back to the original starter code (undoable with `Ctrl-Z`) |
+| `F5` | **Open the problem's images** in your default browser (full-size) |
 | `Ctrl-A` | **Save the solution to a file** (clean code) |
 | `Ctrl-X` | Delete the current line |
 | `Ctrl-Z` / `Ctrl-Y` | Undo / redo |
