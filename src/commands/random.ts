@@ -41,11 +41,13 @@ export async function randomCommand(opts: RandomOptions): Promise<void> {
   log.info('🎲 Rolling the dice…');
   const problem = await client.getProblem(chosen.titleSlug);
 
+  const showMeta = config.tags !== false;
   process.stderr.write(
-    `\n${pc.bold(`${problem.frontendId}. ${problem.title}`)}  ${difficultyColor(problem.difficulty)}\n`
+    `\n${pc.bold(`${problem.frontendId}. ${problem.title}`)}` +
+      `${showMeta ? `  ${difficultyColor(problem.difficulty)}` : ''}\n`
   );
   process.stderr.write(pc.dim(`https://leetcode.com/problems/${problem.titleSlug}/\n`));
-  if (problem.topicTags.length) {
+  if (problem.topicTags.length && showMeta) {
     process.stderr.write(pc.dim(`Tags: ${problem.topicTags.map((t) => t.name).join(', ')}\n`));
   }
 

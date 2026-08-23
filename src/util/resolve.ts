@@ -19,12 +19,24 @@ export async function resolveProblem(client: LeetCodeClient, ref: string): Promi
     return client.getProblem(urlMatch[1]);
   }
 
-  // Numeric frontend id -> look it up via search.
+  // Numeric frontend id -> look it up via search. LeetCode's search does not
+  // guarantee an exact-id match ranks first, so scan a bounded number of pages
+  // and require an exact frontendId match.
   if (/^\d+$/.test(trimmed)) {
-    const res = await client.listProblems({ limit: 50, skip: 0, search: trimmed });
-    const exact = res.questions.find((q) => q.frontendId === trimmed);
-    if (!exact) throw new Error(`No problem found with id ${trimmed}`);
-    return client.getProblem(exact.titleSlug);
+    const target = String(Number(trimmed)); // normalize e.g. "0001" -> "1"
+    const pageSize = 50;
+    const maxScan = 200; // exact-id matches rank near the top; keep this bounded
+    let skip = 0;
+    let total = Infinity;
+    while (skip < Math.min(total, maxScan)) {
+      const res = await client.listProblems({ limit: pageSize, skip, search: trimmed });
+      total = res.total;
+      const exact = res.questions.find((q) => q.frontendId === target);
+      if (exact) return client.getProblem(exact.titleSlug);
+      if (!res.questions.length) break;
+      skip += res.questions.length;
+    }
+    throw new Error(`No problem found with id ${trimmed}`);
   }
 
   // Assume it's already a slug.

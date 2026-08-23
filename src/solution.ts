@@ -42,18 +42,28 @@ export function solutionPath(config: Config, problem: Problem, lang: LangInfo): 
 }
 
 /** Generate the full solution file contents (metadata header + description + code). */
-export function renderSolutionFile(problem: Problem, langInput: string): { lang: LangInfo; content: string } {
+export function renderSolutionFile(
+  problem: Problem,
+  langInput: string,
+  showMeta = true
+): { lang: LangInfo; content: string } {
   const lang = resolveLang(langInput);
   const snippet = problem.codeSnippets.find((s) => s.langSlug === lang.slug);
   const starter = snippet ? snippet.code : `${lang.line} No starter code available for ${lang.name}.`;
 
   const meta = `${lang.line} ${META_PREFIX} slug=${problem.titleSlug}; questionId=${problem.questionId}; frontendId=${problem.frontendId}; lang=${lang.slug}`;
-  const header = [
+  const titleLine = showMeta
+    ? `${lang.line} ${problem.frontendId}. ${problem.title}  [${problem.difficulty}]`
+    : `${lang.line} ${problem.frontendId}. ${problem.title}`;
+  const headerLines = [
     meta,
-    `${lang.line} ${problem.frontendId}. ${problem.title}  [${problem.difficulty}]`,
+    titleLine,
     `${lang.line} https://leetcode.com/problems/${problem.titleSlug}/`,
-    `${lang.line} Tags: ${problem.topicTags.map((t) => t.name).join(', ') || '-'}`,
-  ].join('\n');
+  ];
+  if (showMeta) {
+    headerLines.push(`${lang.line} Tags: ${problem.topicTags.map((t) => t.name).join(', ') || '-'}`);
+  }
+  const header = headerLines.join('\n');
 
   const description = commentBlock(htmlToText(problem.content), lang);
 
@@ -78,7 +88,7 @@ export function writeSolutionFile(
   langInput: string,
   overwrite = false
 ): { filePath: string; created: boolean; lang: LangInfo } {
-  const { lang, content } = renderSolutionFile(problem, langInput);
+  const { lang, content } = renderSolutionFile(problem, langInput, config.tags !== false);
   const filePath = solutionPath(config, problem, lang);
   if (fs.existsSync(filePath) && !overwrite) {
     return { filePath, created: false, lang };

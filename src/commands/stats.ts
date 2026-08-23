@@ -24,14 +24,20 @@ function heatCell(count: number): string {
 }
 
 /** A compact "last 30 days" activity strip built from the solve log. */
-function activityStrip(dates: string[], today = new Date()): string[] {
-  const counts = new Map<string, number>();
-  for (const d of dates) counts.set(d, (counts.get(d) || 0) + 1);
+function activityStrip(entries: { date: string; slug: string }[], today = new Date()): string[] {
+  // Count unique problems solved per day so the heat matches the deduped
+  // "Today" count (a re-submitted Accepted shouldn't inflate a day's cell).
+  const perDay = new Map<string, Set<string>>();
+  for (const e of entries) {
+    let set = perDay.get(e.date);
+    if (!set) perDay.set(e.date, (set = new Set()));
+    set.add(e.slug);
+  }
   const cells: string[] = [];
   for (let i = 29; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    cells.push(heatCell(counts.get(localDate(d)) || 0));
+    cells.push(heatCell(perDay.get(localDate(d))?.size || 0));
   }
   return cells;
 }
@@ -45,6 +51,7 @@ export async function statsCommand(): Promise<void> {
   const out: string[] = [];
   out.push('');
   out.push(pc.bold(pc.cyan('  ✦ Your LeetCode stats ✦')));
+  out.push(pc.dim('  tracked locally by this CLI'));
   out.push('');
   out.push(`  ${pc.bold('Solved')}      ${pc.bold(pc.green(String(s.total)))} problem${s.total === 1 ? '' : 's'}`);
   out.push(`  ${pc.bold('Today')}       ${s.todayCount > 0 ? pc.green(String(s.todayCount)) : pc.dim('0')}`);
@@ -72,7 +79,7 @@ export async function statsCommand(): Promise<void> {
   }
 
   // Last-30-days activity heatmap from the solve log.
-  const cells = activityStrip((cfg.solveLog || []).map((e) => e.date));
+  const cells = activityStrip((cfg.solveLog || []).map((e) => ({ date: e.date, slug: e.slug })));
   out.push(`  ${pc.bold('Last 30 days')}`);
   out.push('  ' + cells.slice(0, 15).join(' '));
   out.push('  ' + cells.slice(15).join(' ') + `   ${pc.dim('less')} ${pc.dim('·')} ${pc.green('▪')} ${pc.green('▩')} ${pc.greenBright('█')} ${pc.dim('more')}`);

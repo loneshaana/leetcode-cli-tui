@@ -202,11 +202,16 @@ export function streakInfo(
 export function computeStats(cfg: Config = loadConfig(), today = localDate(new Date())): Stats {
   const log = cfg.solveLog || [];
   const byDifficulty = { Easy: 0, Medium: 0, Hard: 0, Unknown: 0 };
-  const seen = new Set<string>();
+  // Group by slug, preferring the latest known (non-empty) difficulty so an
+  // older entry that lacked difficulty doesn't pin a problem to "Unknown".
+  const difBySlug = new Map<string, string>();
   for (const e of log) {
-    if (seen.has(e.slug)) continue;
-    seen.add(e.slug);
     const key = (e.difficulty || '').toLowerCase();
+    if (key) difBySlug.set(e.slug, key);
+    else if (!difBySlug.has(e.slug)) difBySlug.set(e.slug, '');
+  }
+  const seen = new Set<string>(difBySlug.keys());
+  for (const key of difBySlug.values()) {
     if (key === 'easy') byDifficulty.Easy++;
     else if (key === 'medium') byDifficulty.Medium++;
     else if (key === 'hard') byDifficulty.Hard++;

@@ -120,7 +120,14 @@ export class CodeEditor {
   }
 
   setValue(value: string): void {
-    this.lines = value.replace(/\r\n/g, '\n').split('\n');
+    // Normalize CRLF/lone-CR to \n and expand real tabs to spaces so that the
+    // buffer column always matches the rendered column (typed tabs already
+    // insert spaces), keeping the Ln/Col indicator and caret placement honest.
+    this.lines = value
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/\t/g, ' '.repeat(this.tabWidth))
+      .split('\n');
     if (this.lines.length === 0) this.lines = [''];
     this.cy = Math.min(this.cy, this.lines.length - 1);
     this.cx = Math.min(this.cx, this.lines[this.cy].length);

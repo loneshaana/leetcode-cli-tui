@@ -281,16 +281,20 @@ export function runTui(params: TuiParams): Promise<void> {
     let spinnerTimer: NodeJS.Timeout | null = null;
     let clockTimer: NodeJS.Timeout | null = null;
     // Pausable, persisted timer. `baseElapsed` is time carried over from prior
-    // sessions on this problem; `accumulated` is counted time this session while
-    // running; `runningSince` marks the current running segment (null = paused).
+    // sessions on this problem.
     const timerSlug = problem.titleSlug;
     const baseElapsed = loadConfig().timeSpent?.[timerSlug] ?? 0;
-    let accumulated = 0;
+    // Track in milliseconds so sub-second running segments aren't lost each time
+    // the timer is paused (flooring only happens when we expose/persist whole
+    // seconds). `accumulatedMs` holds completed segments; `runningSince` marks
+    // the current running segment start (null = paused).
+    let accumulatedMs = 0;
     let runningSince: number | null = Date.now();
+    let timerFlushTick = 0;
 
     function sessionSeconds(): number {
-      const live = runningSince ? Math.floor((Date.now() - runningSince) / 1000) : 0;
-      return accumulated + live;
+      const liveMs = runningSince ? Date.now() - runningSince : 0;
+      return Math.floor((accumulatedMs + liveMs) / 1000);
     }
     function totalSeconds(): number {
       return baseElapsed + sessionSeconds();
@@ -300,7 +304,7 @@ export function runTui(params: TuiParams): Promise<void> {
     }
     function pauseTimer(): void {
       if (runningSince) {
-        accumulated += Math.floor((Date.now() - runningSince) / 1000);
+        accumulatedMs += Date.now() - runningSince;
         runningSince = null;
         persistTime();
       }
@@ -686,11 +690,16 @@ export function runTui(params: TuiParams): Promise<void> {
         clearInterval(clockTimer);
         clockTimer = null;
       }
-      persistTime();
-      if (dirty) saveCode();
-      screen.program.showCursor();
-      screen.destroy();
-      resolve();
+      try {
+        persistTime();
+        if (dirty) saveCode();
+      } catch {
+        // Never let a failed save block teardown — restore the terminal first.
+      } finally {
+        screen.program.showCursor();
+        screen.destroy();
+        resolve();
+      }
     }
 
     descBox.on('click', () => focusPane(0));
@@ -710,7 +719,10 @@ export function runTui(params: TuiParams): Promise<void> {
       if (saveOpen || tcOpen || helpOpen) return;
       void doSubmit();
     });
-    screen.key(['C-w'], () => saveCode());
+    screen.key(['C-w'], () => {
+      if (helpOpen || saveOpen) return;
+      saveCode();
+    });
     screen.key(['f1'], () => {
       if (!tcOpen && !saveOpen) toggleHelp();
     });
@@ -720,17 +732,17 @@ export function runTui(params: TuiParams): Promise<void> {
       if (!editor.isFocused() && !tcOpen && !saveOpen) toggleHelp();
     });
     screen.key(['C-p'], () => {
-      if (!saveOpen) toggleTimer();
+      if (!saveOpen && !helpOpen) toggleTimer();
     });
     screen.key(['C-e'], () => {
       if (!tcOpen && !saveOpen && !helpOpen) externalEdit();
     });
     screen.key(['C-t'], () => {
-      if (helpOpen) return;
+      if (helpOpen || saveOpen) return;
       return tcOpen ? closeTestcase(true) : openTestcase();
     });
     screen.key(['C-a'], () => {
-      if (helpOpen) return;
+      if (helpOpen || tcOpen) return;
       return saveOpen ? closeSave() : openSave();
     });
     screen.key(['escape'], () => {
@@ -761,7 +773,7 @@ export function runTui(params: TuiParams): Promise<void> {
       if (!tcOpen && !saveOpen && !helpOpen) focusPane(current + 1);
     });
     screen.key(['f2'], () => {
-      if (helpOpen) return;
+      if (helpOpen || tcOpen || saveOpen) return;
       editor.setVim(!editor.isVim());
       if (!editor.isVim()) setVimStatus('');
       focusPane(1);
@@ -781,7 +793,12 @@ export function runTui(params: TuiParams): Promise<void> {
     resetStatus();
     setRichOutput(welcomeTags(`${problem.frontendId}. ${problem.title}`));
     clockTimer = setInterval(() => {
-      if (!busy) renderStatusBar();
+      if (busy) return;
+      renderStatusBar();
+      // Periodically flush the timer so an abrupt terminal close (crash, closed
+      // window) loses at most ~15s of the active session rather than all of it.
+      timerFlushTick = (timerFlushTick + 1) % 15;
+      if (timerFlushTick === 0 && runningSince) persistTime();
     }, 1000);
   });
 }
