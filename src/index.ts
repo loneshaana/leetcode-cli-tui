@@ -58,6 +58,17 @@ program
   .action(lazy(() => import('./commands/tui.js'), 'tuiCommand'));
 
 program
+  .command('today')
+  .alias('daily')
+  .description("Fetch today's daily challenge and generate a solution file (use --tui to edit inline)")
+  .option('-L, --lang <lang>', 'Language (defaults to configured language)')
+  .option('-o, --open', 'Print the problem description to stdout')
+  .option('--no-gen', 'Do not generate a solution file')
+  .option('--overwrite', 'Overwrite an existing solution file')
+  .option('--tui', 'Open the split-pane TUI instead of just generating a file')
+  .action(lazy(() => import('./commands/today.js'), 'todayCommand'));
+
+program
   .command('run <file>')
   .description('Run a solution file against the sample test cases')
   .option('-t, --testcase <input>', 'Custom test input (use \\n for newlines)')

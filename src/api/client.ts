@@ -116,9 +116,13 @@ export class LeetCodeClient {
 
   async getDailyProblemSlug(): Promise<string> {
     const data = await this.graphql<{
-      activeDailyCodingChallengeQuestion: { question: { titleSlug: string } };
+      activeDailyCodingChallengeQuestion?: { question?: { titleSlug?: string } };
     }>(DAILY_QUESTION, {});
-    return data.activeDailyCodingChallengeQuestion.question.titleSlug;
+    const slug = data.activeDailyCodingChallengeQuestion?.question?.titleSlug;
+    if (!slug) {
+      throw new Error('LeetCode did not return an active daily challenge. Please try again shortly.');
+    }
+    return slug;
   }
 
   /** Kick off a "run against test cases" (interpret) request. */

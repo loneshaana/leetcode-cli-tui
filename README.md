@@ -86,6 +86,9 @@ leetcode show daily                 # today's daily challenge
 leetcode show two-sum -L python3    # override language
 leetcode show two-sum -o            # also print the description
 
+leetcode today                      # fetch today's daily challenge (alias: daily)
+leetcode today --tui                # ...and open it straight in the TUI
+
 leetcode tui two-sum                # <-- the split-pane editor experience
 leetcode tui 1                      # by frontend id (also: a URL, or "daily")
 leetcode edit two-sum               # alias for tui
