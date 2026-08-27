@@ -65,9 +65,12 @@ export function readClipboard(): string | null {
     try {
       const r = spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
       if (!r.error && r.status === 0 && typeof r.stdout === 'string') {
-        // Normalise CRLF and drop the single trailing newline that tools like
-        // `Get-Clipboard` append, without touching intentional inner newlines.
-        return r.stdout.replace(/\r\n/g, '\n').replace(/\n$/, '');
+        // Normalise CRLF. Windows `Get-Clipboard` appends a single trailing
+        // newline that we strip; the POSIX tools (pbpaste, `wl-paste
+        // --no-newline`, `xclip -o`, `xsel -o`) emit the contents verbatim, so
+        // there we keep any genuine trailing newline intact.
+        const normalized = r.stdout.replace(/\r\n/g, '\n');
+        return process.platform === 'win32' ? normalized.replace(/\n$/, '') : normalized;
       }
     } catch {
       /* try the next candidate */
