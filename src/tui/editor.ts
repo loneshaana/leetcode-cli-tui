@@ -1,5 +1,7 @@
 import blessed from 'blessed';
-import { highlightLine } from './highlight';
+import { StringDecoder } from 'string_decoder';
+import { highlightLine, blockStateAfter, getThemeUi, ThemeUi } from './highlight';
+import { readClipboard, writeClipboard } from './clipboard';
 
 export type EditorMode = 'insert' | 'normal' | 'visual' | 'visual-line';
 
@@ -37,6 +39,19 @@ const QUOTES = new Set(['"', "'", '`']);
 const CLOSERS = new Set([')', ']', '}']);
 
 /**
+ * Longest suffix of `s` that is a (proper) prefix of `marker` — used to hold
+ * back the tail of a data chunk that might be the first bytes of a bracketed-
+ * paste marker split across chunk boundaries. Returns '' when there is none.
+ */
+function tailPrefix(s: string, marker: string): string {
+  const max = Math.min(s.length, marker.length - 1);
+  for (let k = max; k > 0; k--) {
+    if (s.slice(s.length - k) === marker.slice(0, k)) return s.slice(s.length - k);
+  }
+  return '';
+}
+
+/**
  * A real multi-line code editor built on a blessed box, with optional vim key
  * bindings, syntax highlighting, a line-number gutter, auto-closing brackets
  * and language-aware indentation.
@@ -53,6 +68,7 @@ export class CodeEditor {
   private top = 0; // first visible line
   private left = 0; // first visible column
   private readonly tabWidth = 4;
+  private readonly ui: ThemeUi;
 
   // Vim state.
   private vimEnabled = false;
@@ -63,10 +79,26 @@ export class CodeEditor {
   private registerLinewise = false;
   private undoStack: Snapshot[] = [];
   private redoStack: Snapshot[] = [];
+  // Non-vim undo coalescing: tracks the kind of the current contiguous edit run
+  // so each Ctrl-Z reverts a whole run (a word typed, a burst of deletes) rather
+  // than a single character. Reset to '' whenever the caret moves without an edit.
+  private pendingEditKind: '' | 'insert' | 'delete' = '';
   private vax = 0; // visual anchor column
   private vay = 0; // visual anchor row
+  // Non-vim (default mode) selection: when true, an active selection spans the
+  // half-open range from the anchor (vay,vax) to the caret (cy,cx). Extended
+  // with Shift+arrows/Home/End/PageUp/Down; cleared by an unshifted move, an
+  // edit, or Escape. This is independent of vim visual mode.
+  private selecting = false;
   private lastNewlineTs = 0; // timestamp of last processed newline, to coalesce CRLF halves
   private lastNewlineName = ''; // key name of last processed newline (return/enter/linefeed)
+  private pasting = false; // true while consuming/echoing a bracketed-paste chunk
+  private pasteCapturing = false; // true while raw text is being captured between markers
+  private pasteRaw = ''; // accumulates raw pasted bytes across data chunks
+  private pasteCarry = ''; // trailing bytes that may be a split START/END marker
+  private pasteGen = 0; // generation counter so a stale re-enable can't clear a newer paste
+  private pasteTimer: ReturnType<typeof setTimeout> | null = null; // safety net for a paste that never ends
+  private readonly pasteDecoder = new StringDecoder('utf8'); // UTF-8 safe across chunk splits
   private lastFind: { cmd: string; ch: string } | null = null; // for ; and ,
   private lastDot: (() => void) | null = null; // last change, for the . command
 
@@ -78,6 +110,7 @@ export class CodeEditor {
   ) {
     this.vimEnabled = !!behavior.vim;
     this.mode = this.vimEnabled ? 'normal' : 'insert';
+    this.ui = getThemeUi(behavior.theme);
     this.box = blessed.box({
       ...options,
       tags: !!behavior.highlight,
@@ -91,9 +124,33 @@ export class CodeEditor {
     this.box.on('keypress', (ch: string, key: blessed.Widgets.Events.IKeyEventArg) => {
       this.handleKey(ch, key);
     });
+    // Intercept the raw input stream *before* blessed parses it so we can pull
+    // pasted text straight out of the bracketed-paste wrapper (ESC[200~ … ESC[201~).
+    // blessed 0.1.81 silently drops those markers and would otherwise deliver
+    // the paste as individual keystrokes, which triggers auto-indent/auto-close
+    // and "staircases" the block. prependListener guarantees we run ahead of
+    // blessed's own data handler for each chunk.
+    const rawInput = (this.screen.program as unknown as {
+      input?: NodeJS.EventEmitter & { prependListener?: (e: string, cb: (d: unknown) => void) => void };
+    }).input;
+    if (rawInput && typeof rawInput.prependListener === 'function') {
+      rawInput.prependListener('data', (data: unknown) => this.onRawInput(data));
+    }
     this.box.on('click', () => {
       this.box.focus();
       this.render();
+    });
+    // Enable terminal "bracketed paste" while the editor is focused so pasted
+    // text arrives wrapped in ESC[200~ ... ESC[201~ and can be inserted
+    // literally, instead of as individual keystrokes that trigger auto-indent
+    // and auto-close (which "staircase" a pasted block).
+    this.box.on('focus', () => this.setBracketedPaste(true));
+    this.box.on('blur', () => {
+      this.setBracketedPaste(false);
+      // A paste in flight when focus moves away can never see its END marker
+      // here (onRawInput early-returns when unfocused). Drop the partial paste
+      // so `pasting` can't stay stuck true and freeze the editor.
+      this.resetPasteState();
     });
     this.box.on('wheeldown', () => {
       this.pageMove(3);
@@ -119,20 +176,28 @@ export class CodeEditor {
     return this.lines.join('\n');
   }
 
-  setValue(value: string): void {
-    // Normalize CRLF/lone-CR to \n and expand real tabs to spaces so that the
-    // buffer column always matches the rendered column (typed tabs already
-    // insert spaces), keeping the Ln/Col indicator and caret placement honest.
-    this.lines = value
+  /**
+   * Normalize external text into buffer lines: CRLF/lone-CR to \n and real tabs
+   * expanded to spaces, so the buffer column always matches the rendered column
+   * (typed tabs already insert spaces), keeping the Ln/Col indicator and caret
+   * placement honest. Always returns at least one line.
+   */
+  private normalizeToLines(value: string): string[] {
+    const lines = value
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '\n')
       .replace(/\t/g, ' '.repeat(this.tabWidth))
       .split('\n');
-    if (this.lines.length === 0) this.lines = [''];
+    return lines.length === 0 ? [''] : lines;
+  }
+
+  setValue(value: string): void {
+    this.lines = this.normalizeToLines(value);
     this.cy = Math.min(this.cy, this.lines.length - 1);
     this.cx = Math.min(this.cx, this.lines[this.cy].length);
     this.undoStack = [];
     this.redoStack = [];
+    this.pendingEditKind = '';
     this.render();
   }
 
@@ -142,12 +207,12 @@ export class CodeEditor {
    */
   resetTo(value: string): void {
     this.pushUndo();
-    this.lines = value.replace(/\r\n/g, '\n').split('\n');
-    if (this.lines.length === 0) this.lines = [''];
+    this.lines = this.normalizeToLines(value);
     this.cy = 0;
     this.cx = 0;
     this.top = 0;
     this.left = 0;
+    this.pendingEditKind = '';
     this.markDirty();
     this.emitStatus();
     this.render();
@@ -170,6 +235,7 @@ export class CodeEditor {
   /** Public undo, for a Ctrl-Z binding (works in vim and non-vim modes). */
   undoAction(): void {
     this.undo();
+    this.pendingEditKind = '';
     this.clampNormal();
     this.emitStatus();
     this.render();
@@ -178,6 +244,7 @@ export class CodeEditor {
   /** Public redo, for a Ctrl-Y binding. */
   redoAction(): void {
     this.redo();
+    this.pendingEditKind = '';
     this.clampNormal();
     this.emitStatus();
     this.render();
@@ -248,7 +315,7 @@ export class CodeEditor {
 
     const useTags = !!this.behavior.highlight;
     const digits = gutter > 0 ? gutter - 1 : 0;
-    const sel = this.selectionBounds();
+    const sel = this.renderSelection();
     const rows: string[] = [];
 
     // Matching-bracket highlight: when the caret sits on a bracket, find its
@@ -259,6 +326,18 @@ export class CodeEditor {
       if (cur && '()[]{}'.includes(cur)) {
         const m = this.bracketMatch(this.cy, this.cx);
         if (m) bm = { ay: this.cy, ax: this.cx, by: m.y, bx: m.x };
+      }
+    }
+
+    // Multi-line block state (block comments / triple-quoted strings) must be
+    // carried across lines. Fast-forward from the top of the file to the first
+    // visible row, then advance it row-by-row so blocks colour correctly even
+    // when they open above the viewport.
+    const lang = this.behavior.lang;
+    let blk = -1;
+    if (useTags && lang) {
+      for (let k = 0; k < this.top && k < this.lines.length; k++) {
+        blk = blockStateAfter(this.lines[k], lang, blk);
       }
     }
 
@@ -283,8 +362,8 @@ export class CodeEditor {
       if (rowSel) {
         body = this.renderSelectedRow(raw, idx, rowSel, line.length, useTags);
       } else if (useTags) {
-        body = this.behavior.lang
-          ? highlightLine(raw, this.behavior.lang, this.behavior.theme)
+        body = lang
+          ? highlightLine(line, lang, this.behavior.theme, this.left, this.left + W, blk)
           : blessed.escape(raw);
         if (bm) {
           if (idx === bm.ay) body = this.overlayVisibleCol(body, bm.ax - this.left);
@@ -294,14 +373,18 @@ export class CodeEditor {
         body = raw;
       }
 
+      // Advance block state for the next row (also across selected rows, which
+      // are rendered without highlighting).
+      if (useTags && lang) blk = blockStateAfter(line, lang, blk);
+
       if (gutter > 0) {
         const num = String(idx + 1).padStart(digits) + ' ';
         if (!useTags) {
           rows.push(num + body);
         } else if (idx === this.cy) {
-          rows.push(`{yellow-fg}{bold}${num}{/bold}{/yellow-fg}` + body);
+          rows.push(`{${this.ui.gutterActive}-fg}{bold}${num}{/bold}{/${this.ui.gutterActive}-fg}` + body);
         } else {
-          rows.push(`{cyan-fg}${num}{/cyan-fg}` + body);
+          rows.push(`{${this.ui.gutter}-fg}${num}{/${this.ui.gutter}-fg}` + body);
         }
       } else {
         rows.push(body);
@@ -321,8 +404,8 @@ export class CodeEditor {
    */
   private overlayVisibleCol(s: string, col: number): string {
     if (col < 0) return s;
-    const open = '{underline}{blue-bg}';
-    const close = '{/blue-bg}{/underline}';
+    const open = `{underline}{${this.ui.bracket}-bg}`;
+    const close = `{/${this.ui.bracket}-bg}{/underline}`;
     let out = '';
     let visible = 0;
     let i = 0;
@@ -351,7 +434,8 @@ export class CodeEditor {
     return out;
   }
 
-  /** Render a row that intersects the visual selection, using reverse video. */
+  /** Render a row that intersects the selection, using reverse video. `sel`
+   * uses HALF-OPEN column semantics: `ex` is exclusive on the end row. */
   private renderSelectedRow(
     raw: string,
     idx: number,
@@ -366,7 +450,9 @@ export class CodeEditor {
       endCol = lineLen;
     } else {
       startCol = idx === sel.sy ? sel.sx : 0;
-      endCol = (idx === sel.ey ? sel.ex : lineLen) + 1; // inclusive caret
+      // On the last row stop at the exclusive end; on earlier rows extend one
+      // past the content so the wrapped newline reads as selected.
+      endCol = idx === sel.ey ? sel.ex : lineLen + 1;
     }
     const vs = Math.max(0, Math.min(raw.length, startCol - this.left));
     const ve = Math.max(0, Math.min(raw.length, endCol - this.left));
@@ -414,6 +500,17 @@ export class CodeEditor {
   private handleKey(ch: string, key: blessed.Widgets.Events.IKeyEventArg): void {
     if (!key) return;
 
+    // While a bracketed paste is being consumed from the raw input stream (see
+    // onRawInput), blessed still emits keypress events for every pasted
+    // character. Drop them here — the paste text is inserted verbatim by
+    // onRawInput, so echoing these would double it (and staircase the indent).
+    if (this.pasting) return;
+
+    // Shift-Tab is the app's pane-cycle shortcut (bound at screen level). The
+    // focused editor also receives the keypress, so ignore it here — otherwise
+    // it would be treated as a plain Tab and indent/insert spaces while cycling.
+    if (key.name === 'tab' && key.shift) return;
+
     // Coalesce a Windows CRLF into a single Enter. One physical Enter emits a
     // "return"/\r + "enter"/\n pair in the same tick (two *different* key
     // names). Swallow the second half only when it is a differently-named
@@ -440,6 +537,13 @@ export class CodeEditor {
       return;
     }
 
+    // Ctrl-V pastes the OS clipboard (or the internal register) at the caret,
+    // in every mode. Handled before the generic Ctrl passthrough below.
+    if (key.ctrl && !key.meta && key.name === 'v') {
+      this.pasteClipboard();
+      return;
+    }
+
     // Let global Ctrl/Meta shortcuts (run/submit/save/quit) pass through.
     if (key.ctrl || key.meta) return;
 
@@ -450,6 +554,7 @@ export class CodeEditor {
 
     // Insert mode (also the only mode when vim is disabled).
     if (this.vimEnabled && key.name === 'escape') {
+      this.selecting = false;
       this.mode = 'normal';
       if (this.cx > 0) this.cx--;
       this.clampNormal();
@@ -461,30 +566,84 @@ export class CodeEditor {
   }
 
   private handleInsert(ch: string, key: blessed.Widgets.Events.IKeyEventArg): void {
+    // Escape clears an active (non-vim) selection.
+    if (key.name === 'escape') {
+      if (this.selecting) {
+        this.selecting = false;
+        this.render();
+      }
+      return;
+    }
+
+    // Selection handling. Shift + a motion key extends/starts a selection;
+    // an unshifted motion collapses it. `key.full` (e.g. "S-up") is checked as
+    // a fallback for terminals that don't set `key.shift` on arrows.
+    const NAV = ['up', 'down', 'left', 'right', 'home', 'end', 'pageup', 'pagedown'];
+    const shift =
+      !!key.shift || (typeof key.full === 'string' && key.full.startsWith('S-'));
+    if (NAV.includes(key.name)) {
+      if (shift) {
+        if (!this.selecting) {
+          this.vay = this.cy;
+          this.vax = this.cx;
+          this.selecting = true;
+        }
+      } else {
+        this.selecting = false;
+      }
+    } else if (this.selecting) {
+      // A text-editing key replaces the current selection.
+      const printable = !!ch && ch.length === 1 && ch >= ' ';
+      if (key.name === 'backspace' || key.name === 'delete') {
+        this.deleteSelectedText(false);
+        this.render();
+        return;
+      }
+      if (
+        key.name === 'enter' ||
+        key.name === 'return' ||
+        key.name === 'tab' ||
+        key.name === 'space' ||
+        printable
+      ) {
+        this.deleteSelectedText(false);
+        // Fold the upcoming insertion into the same undo step as the delete.
+        this.pendingEditKind = 'insert';
+      }
+    }
+
     switch (key.name) {
       case 'up':
         this.moveUp();
+        this.breakEditRun();
         break;
       case 'down':
         this.moveDown();
+        this.breakEditRun();
         break;
       case 'left':
         this.moveLeft();
+        this.breakEditRun();
         break;
       case 'right':
         this.moveRight();
+        this.breakEditRun();
         break;
       case 'home':
         this.cx = 0;
+        this.breakEditRun();
         break;
       case 'end':
         this.cx = this.lines[this.cy].length;
+        this.breakEditRun();
         break;
       case 'pageup':
         this.pageMove(-this.innerHeight());
+        this.breakEditRun();
         break;
       case 'pagedown':
         this.pageMove(this.innerHeight());
+        this.breakEditRun();
         break;
       case 'enter':
       case 'return':
@@ -492,22 +651,33 @@ export class CodeEditor {
           this.behavior.onSubmit(this.getValue());
           return;
         }
+        this.captureEdit('insert');
         this.insertNewline();
+        this.breakEditRun();
         break;
       case 'backspace':
+        this.captureEdit('delete');
         this.backspace();
         break;
       case 'delete':
+        this.captureEdit('delete');
         this.deleteForward();
         break;
       case 'tab':
-        if (!this.tryExpandSnippet()) this.insert(' '.repeat(this.tabWidth));
+        if (!this.tryExpandSnippet()) {
+          this.captureEdit('insert');
+          this.insert(' '.repeat(this.tabWidth));
+        } else {
+          this.breakEditRun();
+        }
         break;
       case 'space':
+        this.captureEdit('insert');
         this.insert(' ');
         break;
       default:
         if (ch && ch.length === 1 && ch >= ' ') {
+          this.captureEdit('insert');
           this.typeChar(ch);
         } else {
           return;
@@ -758,6 +928,24 @@ export class CodeEditor {
     this.redoStack = [];
   }
 
+  /**
+   * Snapshot the buffer before an edit in non-vim mode, coalescing a contiguous
+   * run of the same edit `kind` into a single undo step. In vim mode undo is
+   * driven by `enterInsert`/operators, so this is a no-op there.
+   */
+  private captureEdit(kind: 'insert' | 'delete'): void {
+    if (this.vimEnabled) return;
+    if (this.pendingEditKind !== kind) {
+      this.pushUndo();
+      this.pendingEditKind = kind;
+    }
+  }
+
+  /** Break the current edit run so the next edit starts a fresh undo step. */
+  private breakEditRun(): void {
+    this.pendingEditKind = '';
+  }
+
   private undo(): void {
     const snap = this.undoStack.pop();
     if (!snap) return;
@@ -813,6 +1001,286 @@ export class CodeEditor {
       [sx, ex] = [ex, sx];
     }
     return { sy, sx, ey, ex, linewise };
+  }
+
+  /**
+   * Ordered half-open bounds of the non-vim (default-mode) selection, or null
+   * when there is none / it is empty. `bx` is exclusive.
+   */
+  private insertSel(): { ay: number; ax: number; by: number; bx: number } | null {
+    if (!this.selecting) return null;
+    let ay = this.vay;
+    let ax = this.vax;
+    let by = this.cy;
+    let bx = this.cx;
+    if (ay > by || (ay === by && ax > bx)) {
+      [ay, by] = [by, ay];
+      [ax, bx] = [bx, ax];
+    }
+    if (ay === by && ax === bx) return null;
+    return { ay, ax, by, bx };
+  }
+
+  /**
+   * Unified selection descriptor for rendering, in HALF-OPEN column semantics
+   * (`ex` exclusive on the end row). Covers both the default-mode selection and
+   * vim visual mode (whose bounds are inclusive, so `ex` is bumped by one).
+   */
+  private renderSelection():
+    | { sy: number; sx: number; ey: number; ex: number; linewise: boolean }
+    | null {
+    const is = this.insertSel();
+    if (is) return { sy: is.ay, sx: is.ax, ey: is.by, ex: is.bx, linewise: false };
+    const vb = this.selectionBounds();
+    if (vb) return { sy: vb.sy, sx: vb.sx, ey: vb.ey, ex: vb.ex + 1, linewise: vb.linewise };
+    return null;
+  }
+
+  /** Extract the text of a half-open range without modifying the buffer. */
+  private rangeText(ay: number, ax: number, by: number, bx: number): string {
+    if (ay === by) return this.lines[ay].slice(ax, bx);
+    const first = this.lines[ay].slice(ax);
+    const mid = this.lines.slice(ay + 1, by);
+    const last = this.lines[by].slice(0, bx);
+    return [first, ...mid, last].join('\n');
+  }
+
+  /**
+   * Remove a half-open range from the buffer, place the caret at its start and
+   * return the removed text. Does not push undo (callers do).
+   */
+  private removeRange(ay: number, ax: number, by: number, bx: number): string {
+    const text = this.rangeText(ay, ax, by, bx);
+    if (ay === by) {
+      this.lines[ay] = this.lines[ay].slice(0, ax) + this.lines[ay].slice(bx);
+    } else {
+      const head = this.lines[ay].slice(0, ax);
+      const tail = this.lines[by].slice(bx);
+      this.lines.splice(ay, by - ay + 1, head + tail);
+    }
+    this.cy = ay;
+    this.cx = ax;
+    return text;
+  }
+
+  /** Delete the active default-mode selection, optionally into the register. */
+  private deleteSelectedText(setRegister: boolean): void {
+    const sel = this.insertSel();
+    if (!sel) return;
+    this.pushUndo();
+    const text = this.removeRange(sel.ay, sel.ax, sel.by, sel.bx);
+    if (setRegister) {
+      this.register = text;
+      this.registerLinewise = false;
+    }
+    this.selecting = false;
+    this.breakEditRun();
+    this.markDirty();
+    this.emitStatus();
+  }
+
+  /** True when any selection (default-mode or vim visual) is active. */
+  hasSelection(): boolean {
+    return this.insertSel() !== null || this.selectionBounds() !== null;
+  }
+
+  /** Copy the current selection to the register and OS clipboard. */
+  copySelection(): void {
+    const sel = this.insertSel();
+    if (sel) {
+      const text = this.rangeText(sel.ay, sel.ax, sel.by, sel.bx);
+      this.register = text;
+      this.registerLinewise = false;
+      writeClipboard(text);
+      this.render(); // selection stays highlighted
+      return;
+    }
+    if (this.selectionBounds()) {
+      // Vim visual mode: reuse the existing yank, then mirror to the clipboard.
+      this.yankSelection();
+      writeClipboard(this.register);
+    }
+  }
+
+  /** Cut the current selection to the register and OS clipboard. */
+  cutSelection(): void {
+    const sel = this.insertSel();
+    if (sel) {
+      this.deleteSelectedText(true);
+      writeClipboard(this.register);
+      this.render();
+      return;
+    }
+    if (this.selectionBounds()) {
+      this.deleteSelection(false);
+      writeClipboard(this.register);
+      this.render();
+    }
+  }
+
+  /** Toggle terminal bracketed-paste mode (DECSET/DECRST 2004). */
+  private setBracketedPaste(on: boolean): void {
+    try {
+      const program = this.screen.program as unknown as {
+        setMode?: (p: string) => void;
+        resetMode?: (p: string) => void;
+      };
+      if (on) program.setMode?.('?2004');
+      else program.resetMode?.('?2004');
+    } catch {
+      /* terminal may not support mode changes; ignore */
+    }
+  }
+
+  /**
+   * Raw input-stream handler (runs before blessed's key parser). Detects the
+   * bracketed-paste wrapper ESC[200~ … ESC[201~, captures the enclosed text
+   * verbatim (across multiple data chunks if needed) and inserts it at the
+   * caret, while flagging `pasting` so blessed's echoed keystrokes are dropped.
+   */
+  private onRawInput(data: unknown): void {
+    if (!this.isFocused()) return;
+    let chunk: string;
+    if (typeof data === 'string') chunk = data;
+    else if (Buffer.isBuffer(data)) chunk = this.pasteDecoder.write(data);
+    else return;
+
+    const START = '\x1b[200~';
+    const END = '\x1b[201~';
+    let s = this.pasteCarry + chunk;
+    this.pasteCarry = '';
+
+    while (s.length > 0) {
+      if (!this.pasteCapturing) {
+        const i = s.indexOf(START);
+        if (i === -1) {
+          // Hold back a trailing partial START so a marker split across data
+          // chunks is still recognized next time (these bytes are also handled
+          // by blessed independently, so nothing is lost if it isn't a marker).
+          this.pasteCarry = tailPrefix(s, START);
+          return;
+        }
+        s = s.slice(i + START.length);
+        this.pasteCapturing = true;
+        this.pasting = true; // drop the keystrokes blessed will echo for this paste
+        this.pasteRaw = '';
+      }
+      const j = s.indexOf(END);
+      if (j === -1) {
+        // Commit all but a possible partial END, which we carry to the next chunk.
+        const keep = tailPrefix(s, END);
+        this.pasteRaw += keep ? s.slice(0, s.length - keep.length) : s;
+        this.pasteCarry = keep;
+        this.armPasteTimer();
+        return;
+      }
+      this.pasteRaw += s.slice(0, j);
+      s = s.slice(j + END.length);
+      this.finishPaste();
+    }
+  }
+
+  /** Commit the captured paste and schedule re-enabling normal typing. */
+  private finishPaste(): void {
+    if (this.pasteTimer) {
+      clearTimeout(this.pasteTimer);
+      this.pasteTimer = null;
+    }
+    this.pasteCapturing = false;
+    const text = this.pasteRaw;
+    this.pasteRaw = '';
+    this.insertPasteText(text);
+    // Keep `pasting` true until blessed finishes echoing this chunk's keys (its
+    // data handler runs synchronously right after ours), then re-enable typing.
+    // The generation guard stops a stale callback from clearing a newer paste.
+    const gen = ++this.pasteGen;
+    setImmediate(() => {
+      if (this.pasteGen === gen && !this.pasteCapturing) this.pasting = false;
+    });
+  }
+
+  /** Arm a safety timer that recovers if a paste's END marker never arrives. */
+  private armPasteTimer(): void {
+    if (this.pasteTimer) clearTimeout(this.pasteTimer);
+    this.pasteTimer = setTimeout(() => {
+      this.pasteTimer = null;
+      if (!this.pasteCapturing) return;
+      // Insert whatever we captured (dropping any dangling partial END) so the
+      // editor never gets stuck ignoring input.
+      this.pasteCapturing = false;
+      const text = this.pasteRaw;
+      this.pasteRaw = '';
+      this.pasteCarry = '';
+      this.insertPasteText(text);
+      this.pasting = false;
+    }, 250);
+  }
+
+  /** Abandon any in-flight paste and restore normal typing (used on blur). */
+  private resetPasteState(): void {
+    if (this.pasteTimer) {
+      clearTimeout(this.pasteTimer);
+      this.pasteTimer = null;
+    }
+    this.pasteCapturing = false;
+    this.pasting = false;
+    this.pasteRaw = '';
+    this.pasteCarry = '';
+    this.pasteGen++;
+  }
+
+  /**
+   * Normalize pasted text to the editor's buffer invariant: LF-only newlines and
+   * tabs expanded to spaces (the buffer never stores '\r' or '\t' — see
+   * normalizeToLines). Single-line inputs (onSubmit set) drop newlines entirely.
+   */
+  private normalizePasted(raw: string): string {
+    let text = raw.replace(/\r\n?/g, '\n').replace(/\t/g, ' '.repeat(this.tabWidth));
+    if (this.behavior.onSubmit) text = text.replace(/\n+/g, ' ');
+    return text;
+  }
+
+  /** Insert paste text verbatim at the caret as a single undo step. */
+  private insertPasteText(raw: string): void {
+    const text = this.normalizePasted(raw);
+    if (!text) return;
+    this.pushUndo();
+    const sel = this.insertSel();
+    if (sel) {
+      this.removeRange(sel.ay, sel.ax, sel.by, sel.bx);
+      this.selecting = false;
+    }
+    const end = this.insertTextAt(this.cy, this.cx, text);
+    this.cy = end.ey;
+    this.cx = end.ex;
+    this.breakEditRun();
+    this.clampNormal();
+    this.markDirty();
+    this.emitStatus();
+    this.render();
+  }
+
+  /** Paste the OS clipboard (falling back to the register) at the caret. */
+  pasteClipboard(): void {
+    const clip = readClipboard();
+    const source = clip && clip.length ? clip : this.register;
+    if (!source) return;
+    const text = this.normalizePasted(source);
+    if (!text) return;
+    this.pushUndo();
+    const sel = this.insertSel();
+    if (sel) {
+      this.removeRange(sel.ay, sel.ax, sel.by, sel.bx);
+      this.selecting = false;
+    }
+    const end = this.insertTextAt(this.cy, this.cx, text);
+    this.cy = end.ey;
+    this.cx = end.ex;
+    this.breakEditRun();
+    this.clampNormal();
+    this.markDirty();
+    this.emitStatus();
+    this.render();
   }
 
   private handleVim(ch: string, key: blessed.Widgets.Events.IKeyEventArg): void {
@@ -1310,9 +1778,11 @@ export class CodeEditor {
           return { from: start, to: Math.max(i, start + 1) };
         }
         const save = this.cx;
+        const saveY = this.cy;
         this.wordForward();
-        const to = this.cy === this.vay ? this.cx : line.length;
+        const to = this.cy === saveY ? this.cx : line.length;
         this.cx = save;
+        this.cy = saveY;
         return { from: start, to: Math.max(to, start) };
       }
       case 'e': {
@@ -1496,10 +1966,33 @@ export class CodeEditor {
     } else {
       const line = this.lines[this.cy];
       const at = after ? Math.min(line.length, this.cx + 1) : this.cx;
-      this.lines[this.cy] = line.slice(0, at) + this.register + line.slice(at);
-      this.cx = at + this.register.length - 1;
+      const end = this.insertTextAt(this.cy, at, this.register);
+      this.cy = end.ey;
+      this.cx = Math.max(0, end.ex - 1); // vim places the caret on the last pasted char
     }
     this.markDirty();
+  }
+
+  /**
+   * Insert `text` (which may contain newlines) at (cy, cx), splitting it across
+   * logical lines so the buffer invariant "no line contains a newline" holds.
+   * Returns the caret position just past the inserted text.
+   */
+  private insertTextAt(cy: number, cx: number, text: string): { ey: number; ex: number } {
+    const parts = text.split('\n');
+    const line = this.lines[cy];
+    const head = line.slice(0, cx);
+    const tail = line.slice(cx);
+    if (parts.length === 1) {
+      this.lines[cy] = head + parts[0] + tail;
+      return { ey: cy, ex: cx + parts[0].length };
+    }
+    const newLines = [head + parts[0]];
+    for (let k = 1; k < parts.length - 1; k++) newLines.push(parts[k]);
+    const last = parts[parts.length - 1];
+    newLines.push(last + tail);
+    this.lines.splice(cy, 1, ...newLines);
+    return { ey: cy + parts.length - 1, ex: last.length };
   }
 
   // ---- ':' command line --------------------------------------------------

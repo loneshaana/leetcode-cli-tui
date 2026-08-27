@@ -19,6 +19,7 @@ export interface Problem {
   isPaidOnly: boolean;
   exampleTestcases: string;
   sampleTestCase: string;
+  metaData: string;
   codeSnippets: CodeSnippet[];
   topicTags: TopicTag[];
   hints: string[];

@@ -65,6 +65,7 @@ export class LeetCodeClient {
       isPaidOnly: !!q.isPaidOnly,
       exampleTestcases: q.exampleTestcases || q.sampleTestCase || '',
       sampleTestCase: q.sampleTestCase || '',
+      metaData: q.metaData || '',
       codeSnippets: q.codeSnippets || [],
       topicTags: q.topicTags || [],
       hints: q.hints || [],

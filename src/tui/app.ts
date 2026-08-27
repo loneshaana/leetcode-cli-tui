@@ -12,6 +12,7 @@ import {
 } from '../solution';
 import { formatRunResult, formatSubmitResult } from '../results';
 import { CodeEditor } from './editor';
+import { configureColors, getThemeUi } from './highlight';
 import { loadConfig, recordSolved, recordSolveTime, recordTimeSpent, formatDuration, computeStats } from '../config';
 import { acceptedBannerTags, encouragementTags, welcomeTags, newlyUnlocked } from './fun';
 
@@ -22,7 +23,7 @@ export interface TuiParams {
 }
 
 const HELP =
-  '{cyan-fg}{bold}Tab{/bold}{/cyan-fg} pane  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}⇧Tab{/bold}{/cyan-fg} pane  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^R{/bold}{/cyan-fg} run  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^S{/bold}{/cyan-fg} submit  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^T{/bold}{/cyan-fg} test  {grey-fg}·{/grey-fg}  ' +
@@ -31,6 +32,7 @@ const HELP =
   '{cyan-fg}{bold}^A{/bold}{/cyan-fg} save-as  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^W{/bold}{/cyan-fg} save  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}F2{/bold}{/cyan-fg} vim  {grey-fg}·{/grey-fg}  ' +
+  '{cyan-fg}{bold}^F{/bold}{/cyan-fg} zoom  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^P{/bold}{/cyan-fg} pause  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}?{/bold}{/cyan-fg}{grey-fg}/{/grey-fg}{cyan-fg}{bold}F1{/bold}{/cyan-fg} help  {grey-fg}·{/grey-fg}  ' +
   '{cyan-fg}{bold}^Q{/bold}{/cyan-fg} quit';
@@ -46,10 +48,14 @@ const HELP_OVERLAY =
   '    {cyan-fg}F2{/cyan-fg}       Toggle vim mode\n' +
   '    {cyan-fg}F4{/cyan-fg}       Reset editor to starter code\n' +
   '    {cyan-fg}Ctrl-Z/Y{/cyan-fg} Undo / redo\n' +
-  '    {cyan-fg}Ctrl-X{/cyan-fg}   Delete current line\n' +
+  '    {cyan-fg}Shift+↑↓←→{/cyan-fg} Select text (also Shift+Home/End/PgUp/PgDn)\n' +
+  '    {cyan-fg}Ctrl-C{/cyan-fg}   Copy selection   {cyan-fg}Ctrl-V{/cyan-fg} Paste\n' +
+  '    {cyan-fg}Ctrl-X{/cyan-fg}   Cut selection (or delete current line)\n' +
   '    {cyan-fg}Ctrl-E{/cyan-fg}   Edit in $EDITOR and come back\n\n' +
   '  {yellow-fg}{bold}Files & panes{/bold}{/yellow-fg}\n' +
-  '    {cyan-fg}Tab{/cyan-fg}      Cycle panes (scroll with ↑↓/PgUp/PgDn/g/G)\n' +
+  '    {cyan-fg}Shift-Tab/F6{/cyan-fg}  Cycle panes (then scroll with ↑↓/PgUp/PgDn/Home/End/g/G)\n' +
+  '    {cyan-fg}Ctrl-F{/cyan-fg}   Maximize / restore the focused pane (zoom)\n' +
+  '    {cyan-fg}Ctrl-↑/↓{/cyan-fg}      Scroll the Output pane from anywhere\n' +
   '    {cyan-fg}Ctrl-W{/cyan-fg}   Save file    {cyan-fg}Ctrl-A{/cyan-fg} Save solution as…\n\n' +
   '  {yellow-fg}{bold}Timer{/bold}{/yellow-fg}\n' +
   '    {cyan-fg}Ctrl-P{/cyan-fg}   Pause / resume the problem timer\n\n' +
@@ -70,6 +76,12 @@ export function runTui(params: TuiParams): Promise<void> {
       autoPadding: true,
     });
 
+    // Match syntax colours to the terminal's real capability. blessed@0.1.x
+    // downsamples truecolor hex to the terminal palette; on 8-colour terminals
+    // (e.g. Windows with no TERM/COLORTERM) dim comment colours collapse to
+    // black and become invisible, so fall back to a named-colour palette.
+    configureColors((screen.program as unknown as { tput?: { colors?: number } }).tput?.colors);
+
     blessed.box({
       parent: screen,
       top: 0,
@@ -86,12 +98,13 @@ export function runTui(params: TuiParams): Promise<void> {
       label: ' 📄 Problem ',
       top: 1,
       left: 0,
-      width: '50%',
+      width: '40%',
       bottom: 5,
       border: { type: 'line' },
       scrollable: true,
       alwaysScroll: true,
       keys: true,
+      keyable: true,
       mouse: true,
       vi: true,
       tags: true,
@@ -101,12 +114,12 @@ export function runTui(params: TuiParams): Promise<void> {
     });
 
     // Colored metadata (difficulty + tags) pinned at the bottom of the left pane.
-    blessed.box({
+    const infoBox = blessed.box({
       parent: screen,
       label: ' ℹ Info ',
       left: 0,
       bottom: 1,
-      width: '50%',
+      width: '40%',
       height: 4,
       border: { type: 'line' },
       tags: true,
@@ -120,8 +133,8 @@ export function runTui(params: TuiParams): Promise<void> {
         parent: screen,
         label: ' 📝 Editor ',
         top: 1,
-        left: '50%',
-        width: '50%',
+        left: '40%',
+        width: '60%',
         height: '70%-1',
         border: { type: 'line' },
         style: { border: { fg: 'green' }, focus: { border: { fg: 'green' } } },
@@ -144,13 +157,14 @@ export function runTui(params: TuiParams): Promise<void> {
       parent: screen,
       label: ' ▶ Output ',
       top: '70%',
-      left: '50%',
-      width: '50%',
+      left: '40%',
+      width: '60%',
       bottom: 1,
       border: { type: 'line' },
       scrollable: true,
       alwaysScroll: true,
       keys: true,
+      keyable: true,
       mouse: true,
       vi: true,
       tags: true,
@@ -158,6 +172,28 @@ export function runTui(params: TuiParams): Promise<void> {
       style: { border: { fg: 'magenta' }, focus: { border: { fg: 'yellow' } } },
       content: 'Ready. Ctrl-R runs the sample tests, Ctrl-S submits.',
     });
+
+    // blessed's scrollable box only binds ↑/↓/j/k/g/G/Ctrl-U/D/B/F — it never
+    // wires PageUp/PageDown/Home/End. Add them so the Problem and Output panes
+    // scroll with the keys the help advertises when they hold focus.
+    function wirePageKeys(bx: blessed.Widgets.BoxElement): void {
+      bx.on('keypress', (_ch: string, key: blessed.Widgets.Events.IKeyEventArg) => {
+        const page = Math.max(1, (bx.height as number) - (bx as unknown as { iheight: number }).iheight);
+        const b = bx as unknown as {
+          scroll(n: number): void;
+          scrollTo(n: number): void;
+          getScrollHeight(): number;
+        };
+        if (key.name === 'pageup') b.scroll(-page);
+        else if (key.name === 'pagedown') b.scroll(page);
+        else if (key.name === 'home') b.scrollTo(0);
+        else if (key.name === 'end') b.scrollTo(b.getScrollHeight());
+        else return;
+        screen.render();
+      });
+    }
+    wirePageKeys(descBox);
+    wirePageKeys(outputBox);
 
     const status = blessed.box({
       parent: screen,
@@ -454,6 +490,66 @@ export function runTui(params: TuiParams): Promise<void> {
       refresh();
     }
 
+    // ---- Pane maximize / "zoom" (tmux-style) -------------------------------
+    // The default 3-pane split leaves the editor cramped. Ctrl-F maximizes the
+    // focused pane to fill the whole work area (between the header and status
+    // bar); pressing it again restores the split. While zoomed, pane cycling
+    // moves the maximize to the newly-focused pane instead of showing the
+    // split.
+    const zoomBoxes: blessed.Widgets.BoxElement[] = [
+      descBox,
+      infoBox,
+      editor.box,
+      outputBox,
+    ];
+    const savedPos = new Map<blessed.Widgets.BoxElement, unknown>();
+    let zoomedEl: blessed.Widgets.BoxElement | null = null;
+
+    function currentBox(): blessed.Widgets.BoxElement {
+      return current === 0 ? descBox : current === 2 ? outputBox : editor.box;
+    }
+    function applyZoom(target: blessed.Widgets.BoxElement): void {
+      for (const el of zoomBoxes) {
+        if (!savedPos.has(el)) savedPos.set(el, el.position);
+        if (el === target) {
+          (el as unknown as { position: unknown }).position = {
+            left: 0,
+            right: 0,
+            top: 1,
+            bottom: 1,
+          };
+          el.show();
+        } else {
+          el.hide();
+        }
+      }
+      zoomedEl = target;
+    }
+    function unzoom(): void {
+      for (const el of zoomBoxes) {
+        const p = savedPos.get(el);
+        if (p) (el as unknown as { position: unknown }).position = p;
+        el.show();
+      }
+      savedPos.clear();
+      zoomedEl = null;
+    }
+    function toggleZoom(): void {
+      if (helpOpen || tcOpen || saveOpen) return;
+      if (zoomedEl) unzoom();
+      else applyZoom(currentBox());
+      focusPane(current); // re-render the focused pane (esp. the editor) at its new size
+    }
+    function isZoomed(): boolean {
+      return zoomedEl !== null;
+    }
+    // Move the maximize to whichever pane is now focused (used while cycling
+    // panes with Shift-Tab / F6 in the zoomed state).
+    function rezoomCurrent(): void {
+      applyZoom(currentBox());
+      focusPane(current);
+    }
+
     function saveCode(): void {
       writeCodeRegion(filePath, editor.getValue());
       dirty = false;
@@ -543,21 +639,33 @@ export function runTui(params: TuiParams): Promise<void> {
     // Failing cases from a run (interpret) result, paired with args-per-case.
     function collectFailingRunCases(
       r: JudgeResult,
-      dataInput: string
+      dataInput: string,
+      paramCount = 0
     ): { cases: string[]; argsPerCase: number } {
       const norm = (v: string[] | string | undefined): string[] =>
         !v ? [] : Array.isArray(v) ? v : [v];
       const got = norm(r.code_answer);
       const expected = norm(r.expected_code_answer);
-      const n = Math.max(got.length, expected.length);
-      if (n === 0 || expected.length === 0) return { cases: [], argsPerCase: 0 };
-      const inputs = dataInput ? dataInput.replace(/\s+$/, '').split('\n') : [];
-      if (inputs.length === 0 || inputs.length % n !== 0) return { cases: [], argsPerCase: 0 };
-      const argsPerCase = inputs.length / n;
+      const outCount = Math.max(got.length, expected.length);
+      if (outCount === 0 || expected.length === 0) return { cases: [], argsPerCase: 0 };
+      const inputs = dataInput ? dataInput.replace(/\r\n/g, '\n').replace(/\s+$/, '').split('\n') : [];
+      // The judge produces one output per executed case, so `outCount` is the
+      // authoritative case count. Use metadata's parameter count only to slice
+      // each case's arguments — never to change how many cases there are (that
+      // could otherwise invent a phantom case from a stray input line-group).
+      let argsPerCase: number;
+      const n = outCount;
+      if (paramCount > 0 && inputs.length > 0 && inputs.length % paramCount === 0) {
+        argsPerCase = paramCount;
+      } else {
+        if (inputs.length === 0 || inputs.length % n !== 0) return { cases: [], argsPerCase: 0 };
+        argsPerCase = inputs.length / n;
+      }
       const cases: string[] = [];
       for (let i = 0; i < n; i++) {
         if ((got[i] ?? '') !== (expected[i] ?? '')) {
-          cases.push(inputs.slice(i * argsPerCase, (i + 1) * argsPerCase).join('\n'));
+          const slice = inputs.slice(i * argsPerCase, (i + 1) * argsPerCase);
+          if (slice.length) cases.push(slice.join('\n'));
         }
       }
       return { cases, argsPerCase };
@@ -574,6 +682,7 @@ export function runTui(params: TuiParams): Promise<void> {
     async function doRun(): Promise<void> {
       if (busy) return;
       busy = true;
+      if (isZoomed()) toggleZoom(); // reveal the Output pane so results are visible
       saveCode();
       const usingCustom = customTestcase !== null;
       const dataInput = customTestcase ?? problem.exampleTestcases ?? problem.sampleTestCase ?? '';
@@ -590,11 +699,16 @@ export function runTui(params: TuiParams): Promise<void> {
         const result = await client.waitForResult(interpret_id, (state) =>
           setOutput(`Judging (${state})...`)
         );
-        const table = buildRunTable(result, dataInput);
+        const paramNames = parseParamNames(problem.metaData);
+        const table = buildRunTable(result, dataInput, paramNames);
         if (table) setRichOutput(table);
         else setOutput(formatRunResult(result, { color: false }));
         if (result.correct_answer !== true) {
-          const { cases, argsPerCase } = collectFailingRunCases(result, dataInput);
+          const { cases, argsPerCase } = collectFailingRunCases(
+            result,
+            dataInput,
+            paramNames ? paramNames.length : 0
+          );
           const added = addFailingCases(cases, argsPerCase);
           if (added > 0) noteAddedCases(added);
         }
@@ -610,6 +724,7 @@ export function runTui(params: TuiParams): Promise<void> {
     async function doSubmit(): Promise<void> {
       if (busy) return;
       busy = true;
+      if (isZoomed()) toggleZoom(); // reveal the Output pane so results are visible
       saveCode();
       startSpinner('Submitting...');
       setOutput('Submitting to LeetCode...');
@@ -696,6 +811,14 @@ export function runTui(params: TuiParams): Promise<void> {
       } catch {
         // Never let a failed save block teardown — restore the terminal first.
       } finally {
+        // Restore the terminal: disable bracketed paste (DECRST 2004) so the
+        // user's shell doesn't receive literal ESC[200~ markers on its next
+        // paste, then show the cursor and tear down.
+        try {
+          (screen.program as unknown as { resetMode?: (p: string) => void }).resetMode?.('?2004');
+        } catch {
+          /* ignore: terminal may not support mode changes */
+        }
         screen.program.showCursor();
         screen.destroy();
         resolve();
@@ -707,7 +830,16 @@ export function runTui(params: TuiParams): Promise<void> {
 
     // Global shortcuts. Bound at screen level; the custom editor does NOT grab
     // keys (unlike blessed's textarea), so these fire even while editing.
-    screen.key(['C-q', 'C-c'], quit);
+    screen.key(['C-q'], quit);
+    screen.key(['C-c'], () => {
+      // When the editor has an active selection, Ctrl-C copies it instead of
+      // quitting. Ctrl-Q always quits regardless.
+      if (editor.isFocused() && !tcOpen && !saveOpen && !helpOpen && editor.hasSelection()) {
+        editor.copySelection();
+        return;
+      }
+      quit();
+    });
     screen.key(['C-r'], () => {
       if (saveOpen || helpOpen) return;
       // Running from the testcase popup: save & close it first so the current
@@ -757,7 +889,9 @@ export function runTui(params: TuiParams): Promise<void> {
         tcEditor.focus();
         refresh();
       } else if (!saveOpen && editor.isFocused()) {
-        editor.deleteCurrentLine();
+        // Cut an active selection; otherwise fall back to deleting the line.
+        if (editor.hasSelection()) editor.cutSelection();
+        else editor.deleteCurrentLine();
       }
     });
     screen.key(['C-z'], () => {
@@ -766,11 +900,30 @@ export function runTui(params: TuiParams): Promise<void> {
     screen.key(['C-y'], () => {
       if (!tcOpen && !saveOpen && !helpOpen && editor.isFocused()) editor.redoAction();
     });
+    // Scroll the Output pane from anywhere (the editor ignores Ctrl keys, so
+    // these never conflict with editing). Handy while reading long run/submit
+    // output without leaving the editor.
+    const scrollOutput = (n: number): void => {
+      if (helpOpen || saveOpen) return;
+      (outputBox as unknown as { scroll(n: number): void }).scroll(n);
+      screen.render();
+    };
+    screen.key(['C-up'], () => scrollOutput(-1));
+    screen.key(['C-down'], () => scrollOutput(1));
     screen.key(['S-tab'], () => {
-      if (!tcOpen && !saveOpen && !helpOpen) focusPane(current + 1);
+      if (!tcOpen && !saveOpen && !helpOpen) {
+        focusPane(current + 1);
+        if (isZoomed()) rezoomCurrent();
+      }
     });
     screen.key(['f6'], () => {
-      if (!tcOpen && !saveOpen && !helpOpen) focusPane(current + 1);
+      if (!tcOpen && !saveOpen && !helpOpen) {
+        focusPane(current + 1);
+        if (isZoomed()) rezoomCurrent();
+      }
+    });
+    screen.key(['C-f'], () => {
+      toggleZoom();
     });
     screen.key(['f2'], () => {
       if (helpOpen || tcOpen || saveOpen) return;
@@ -808,7 +961,32 @@ export function runTui(params: TuiParams): Promise<void> {
  * blessed tags. Returns null for compile/runtime errors (caller falls back to
  * the plain formatter) so those show their full message.
  */
-function buildRunTable(r: JudgeResult, dataInput: string): string | null {
+/**
+ * Parse the problem's `metaData` JSON to recover the ordered parameter names
+ * for a normal (function-signature) problem. This is the authoritative source
+ * for how many input lines belong to each test case: LeetCode feeds one line
+ * per parameter, so `params.length` is the args-per-case. Returns null for
+ * class/design problems (no flat `params` array) or unparseable metadata, in
+ * which case callers fall back to deriving the count from the output arrays.
+ */
+function parseParamNames(metaData: string | undefined): string[] | null {
+  if (!metaData) return null;
+  try {
+    const m = JSON.parse(metaData) as { params?: Array<{ name?: unknown }> };
+    if (Array.isArray(m.params) && m.params.length > 0) {
+      return m.params.map((p) => (typeof p?.name === 'string' ? p.name : ''));
+    }
+  } catch {
+    /* ignore malformed metadata */
+  }
+  return null;
+}
+
+function buildRunTable(
+  r: JudgeResult,
+  dataInput: string,
+  paramNames?: string[] | null
+): string | null {
   if (r.compile_error || r.full_compile_error || r.runtime_error || r.full_runtime_error) {
     return null;
   }
@@ -818,58 +996,115 @@ function buildRunTable(r: JudgeResult, dataInput: string): string | null {
   const expected = norm(r.expected_code_answer);
   const stdoutList = norm(r.std_output_list);
   const stdout = norm(r.std_output);
-  const inputs = dataInput ? dataInput.split('\n') : [];
-  const n = Math.max(got.length, expected.length);
+  // Normalise the input blob the same way `collectFailingRunCases` does: a
+  // trailing newline (LeetCode's example testcases and custom input usually end
+  // with one) would otherwise add an empty element, breaking the even division
+  // below so `argsPerCase` falls back to 1 and multi-argument inputs get mixed
+  // across cases.
+  const inputs = dataInput
+    ? dataInput.replace(/\r\n/g, '\n').replace(/\s+$/, '').split('\n')
+    : [];
+  const outCount = Math.max(got.length, expected.length);
+
+  // The judge runs exactly one case per output entry, so `outCount` is the
+  // authoritative number of test cases — always render that many, never more
+  // (using the input line-count could invent a phantom case when the input
+  // blob has a stray extra line-group). Metadata's parameter count is used
+  // only to slice each case's arguments; it must not change the case count.
+  const paramCount = paramNames && paramNames.length ? paramNames.length : 0;
+  const n = outCount;
+  let argsPerCase: number;
+  if (paramCount > 0 && inputs.length > 0 && inputs.length % paramCount === 0) {
+    argsPerCase = paramCount;
+  } else {
+    argsPerCase =
+      inputs.length > 0 && n > 0 && inputs.length % n === 0 ? inputs.length / n : 1;
+  }
   if (n === 0) return null;
 
-  const W = { idx: 4, res: 8, out: 26, exp: 26 };
-  const cell = (s: string, w: number): string => {
-    let str = String(s ?? '').replace(/\s+/g, ' ');
-    if (str.length > w - 1) str = str.slice(0, w - 2) + '…';
-    return str.padEnd(w);
-  };
+  const caseInputs = (i: number): string[] =>
+    argsPerCase === 1
+      ? inputs[i] !== undefined ? [inputs[i]] : []
+      : inputs.slice(i * argsPerCase, (i + 1) * argsPerCase);
+
+  const passCount = (() => {
+    let p = 0;
+    for (let i = 0; i < n; i++) if ((got[i] ?? '') === (expected[i] ?? '')) p++;
+    return p;
+  })();
 
   const ok = r.correct_answer === true;
   const lines: string[] = [];
+
+  // Muted labels use a visible, theme-aware accent instead of grey (which is
+  // near-invisible on several themes/terminals).
+  const labelColor = getThemeUi(loadConfig().theme).label;
+
+  // Continuation indent lines up wrapped/extra values under the value column.
+  const LABEL_W = 11;
+  const pad = ' '.repeat(2 + LABEL_W + 1);
+  // Emit a labelled field. The first value line sits next to the label; any
+  // further lines (multi-arg inputs, multi-line values) are indented to match.
+  // Empty values are shown as a dim "(empty)" placeholder so a blank answer
+  // (e.g. an empty-string result) still reads as a clearly labelled field
+  // rather than looking like a rendering gap.
+  const field = (label: string, values: string[], colorTag?: string): void => {
+    const open = colorTag ? `{${colorTag}}` : '';
+    const close = colorTag ? `{/${colorTag}}` : '';
+    const shown = values.length ? values : [''];
+    shown.forEach((v, li) => {
+      const head =
+        li === 0
+          ? `  {${labelColor}-fg}{bold}` + label.padEnd(LABEL_W) + `{/bold}{/${labelColor}-fg} `
+          : pad;
+      const body =
+        v === '' ? '{grey-fg}(empty){/grey-fg}' : open + blessed.escape(v) + close;
+      lines.push(head + body);
+    });
+  };
+
   lines.push(
     ok
-      ? '{green-fg}{bold}✓ Sample tests passed{/bold}{/green-fg}'
-      : '{red-fg}{bold}✗ Wrong Answer{/bold}{/red-fg}'
+      ? `{green-fg}{bold}✓ Sample tests passed{/bold}{/green-fg}  {${labelColor}-fg}{bold}(${passCount}/${n}){/bold}{/${labelColor}-fg}`
+      : `{red-fg}{bold}✗ Wrong Answer{/bold}{/red-fg}  {${labelColor}-fg}{bold}(${passCount}/${n} passed){/bold}{/${labelColor}-fg}`
   );
-  lines.push('');
-  const header = cell('#', W.idx) + cell('Result', W.res) + cell('Got', W.out) + cell('Expected', W.exp);
-  lines.push('{bold}' + blessed.escape(header) + '{/bold}');
+
   for (let i = 0; i < n; i++) {
     const g = got[i] ?? '';
     const e = expected[i] ?? '';
     const pass = g === e;
-    const row =
-      cell(String(i + 1), W.idx) +
-      cell(pass ? '✓ pass' : '✗ FAIL', W.res) +
-      cell(g, W.out) +
-      cell(e, W.exp);
-    const color = pass ? 'green-fg' : 'red-fg';
-    lines.push(`{${color}}` + blessed.escape(row) + `{/${color}}`);
-    if (inputs[i]) {
-      lines.push('{grey-fg}' + blessed.escape('    in: ' + inputs[i].replace(/\s+/g, ' ')) + '{/grey-fg}');
+    lines.push('');
+    lines.push(
+      `{bold}Case ${i + 1}{/bold}  ` +
+        (pass ? '{green-fg}✓ pass{/green-fg}' : '{red-fg}✗ FAIL{/red-fg}')
+    );
+    const ci = caseInputs(i).filter((s) => s !== undefined);
+    if (ci.length) {
+      // Prefix each argument with its parameter name (from metadata) so a
+      // multi-argument case reads clearly, e.g. `s = "abc"`, `target = "bba"`.
+      const labelled = ci.map((v, k) => {
+        const name = paramNames && paramNames[k];
+        return name ? `${name} = ${v}` : v;
+      });
+      field('Input', labelled);
     }
+    // On a pass both values match, so a single neutral line is clearer. On a
+    // failure, colour Output red and Expected green to spotlight the diff.
+    field('Your Output', [g], pass ? undefined : 'red-fg');
+    field('Expected', [e], pass ? undefined : 'green-fg');
     const caseLog = stdoutList[i];
     if (caseLog && caseLog.trim()) {
-      const logLines = caseLog.replace(/\n+$/, '').split('\n');
-      logLines.forEach((ll, li) => {
-        const prefix = li === 0 ? '   log: ' : '        ';
-        lines.push('{cyan-fg}' + blessed.escape(prefix + ll) + '{/cyan-fg}');
-      });
+      field('Log', caseLog.replace(/\n+$/, '').split('\n'), 'cyan-fg');
     }
   }
   // Fall back to the aggregate stdout only when there is no per-case list.
   const extraStdout = (stdoutList.length ? [] : stdout).filter(Boolean);
   if (extraStdout.length) {
     lines.push('');
-    lines.push('{grey-fg}' + blessed.escape('stdout: ' + extraStdout.join(' | ')) + '{/grey-fg}');
+    lines.push(`{${labelColor}-fg}` + blessed.escape('stdout: ' + extraStdout.join(' | ')) + `{/${labelColor}-fg}`);
   }
   if (r.status_runtime) {
-    lines.push('{grey-fg}' + blessed.escape('runtime: ' + r.status_runtime) + '{/grey-fg}');
+    lines.push(`{${labelColor}-fg}` + blessed.escape('runtime: ' + r.status_runtime) + `{/${labelColor}-fg}`);
   }
   return lines.join('\n');
 }
