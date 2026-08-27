@@ -134,7 +134,11 @@ Keybindings:
 | Key | Action |
 | --- | --- |
 | Arrow keys / Home / End / PageUp / PageDown | Move the cursor in the editor |
+| `Shift` + arrows / Home / End / PageUp / PageDown | **Select** text (multi-line) |
+| `Ctrl-C` | **Copy** the selection to the OS clipboard (quits if nothing is selected) |
+| `Ctrl-V` | **Paste** from the OS clipboard at the caret (multi-line code pastes verbatim) |
 | `Shift-Tab` (or `F6`) | Switch focus between panes |
+| `Ctrl-F` | **Maximize / restore** the focused pane (zoom) |
 | Mouse click | Focus a pane |
 | `Ctrl-R` | Run against the sample tests (or your custom testcase) |
 | `Ctrl-S` | Submit |
@@ -142,7 +146,7 @@ Keybindings:
 | `F3` | Reveal the next **hint** for the problem |
 | `F4` | **Reset the editor** back to the original starter code (undoable with `Ctrl-Z`) |
 | `Ctrl-A` | **Save the solution to a file** (clean code) |
-| `Ctrl-X` | Delete the current line |
+| `Ctrl-X` | **Cut** the selection to the clipboard (deletes the current line if nothing is selected) |
 | `Ctrl-Z` / `Ctrl-Y` | Undo / redo |
 | `Ctrl-W` | Save the file |
 | `Ctrl-P` | **Pause/resume** the problem timer |
@@ -160,7 +164,19 @@ trailing `:`; pressing Enter between `{` and `}` splits the block onto its own l
 a closing `}` de-indents it. `Tab` inserts 4 spaces — or, when the caret follows a snippet
 keyword at the start of a line, expands a **code snippet** (`for`, `while`, `if`, `def`/`class`/`main`
 in Python; `for`, `while`, `if`, `main` in C/C++/Java/JS/TS/Go/Rust) and drops the caret in the
-right spot. For heavy editing you can always jump
+right spot.
+
+**Selection & clipboard:** hold `Shift` with any motion (arrows / `Home` / `End` / `PageUp` /
+`PageDown`) to select across multiple lines, then `Ctrl-C` to copy or `Ctrl-X` to cut — both
+go to your real **OS clipboard** (Windows/macOS/Linux). `Ctrl-V` pastes it back at the caret,
+and pasting multi-line code from anywhere lands **verbatim** — no cascading "staircase"
+indentation — with tabs expanded to spaces and Windows line endings normalized.
+
+**More room to code:** press `Ctrl-F` to **maximize** the focused pane (the editor by
+default) so it fills the whole window; press it again to restore the split. Running or
+submitting automatically restores the split so the Output pane is visible.
+
+For heavy editing you can always jump
 to your own editor with `Ctrl-E`. Mouse is supported — click a pane to focus it, and scroll
 the wheel to move through both the problem description and the editor.
 
@@ -224,8 +240,9 @@ Coding should feel good, so the CLI adds a few bits of delight:
   badges show on the accepted banner and in `leetcode stats`.
 - `leetcode stats` shows your solved counts, streaks and a **difficulty breakdown**, plus your
   **fastest/average solve times** and a **last-30-days activity heatmap**.
-- **Run results** come back as a colored per-test-case table (green pass / red fail) so you
-  can see exactly which case broke.
+- **Run results** come back as a colored per-test-case table (green pass / red fail) with each
+  case clearly **labeled** — the input (named by parameter), your output and the expected value —
+  so you can see exactly which case broke, in any theme.
 - Stuck? Press **F3** in the TUI to reveal the problem's hints one at a time.
 - Pick your **syntax theme** with `leetcode config --theme <default|dracula|monokai|solarized|neon|mono>`.
 - Prefer to solve without hints? Turn off `tags` with `leetcode config --tags off` to **hide both
