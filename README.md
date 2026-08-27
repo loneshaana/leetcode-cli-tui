@@ -1,6 +1,6 @@
 # leetcode-cli-tui
 
-<img width="1198" height="797" alt="image" src="https://github.com/user-attachments/assets/adf6ce87-cca9-4c2f-bc90-6fe4306153a8" />
+<img width="1199" height="804" alt="image" src="https://github.com/user-attachments/assets/13d0c613-387b-4434-96bf-120e264b6cd5" />
 
 
 Work with LeetCode problems entirely from your terminal: **fetch** a problem, edit it
