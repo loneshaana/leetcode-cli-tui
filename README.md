@@ -28,8 +28,11 @@ leetcode tui two-sum
 
 The global install puts the `leetcode` binary on your `PATH`, so it works in any
 **new** terminal tab or window. Already-open tabs may need a reload to see it
-(`hash -r` in bash/zsh, `rehash` in fish, or simply open a new tab). Update later
-with `npm update -g leetcode-cli-tui`, and check the version with `leetcode --version`.
+(`hash -r` in bash/zsh, `rehash` in fish, or simply open a new tab). Check your version
+with `leetcode --version`, and upgrade any time with `leetcode update` (alias `upgrade`)
+— or `npm update -g leetcode-cli-tui`. The CLI also **quietly checks npm once a day** and
+prints a one-line note when a newer version is available (set `NO_UPDATE_NOTIFIER=1`, or
+run in CI, to silence it).
 
 > Requires Node.js >= 18. If a global install complains about permissions, either use a
 > Node version manager (nvm/fnm/volta) or set a user-writable npm prefix
@@ -109,6 +112,9 @@ leetcode random                     # pick a random problem (alias: rand)
 leetcode random -d hard --todo      # random unsolved hard problem
 leetcode review                     # which solved problems are due to revisit
 leetcode review --all               # the full spaced-repetition schedule
+
+leetcode update                     # upgrade to the latest version (alias: upgrade)
+leetcode update --check             # just check for a newer version, don't install
 ```
 
 Solution files are written to the workspace (default `~/leetcode-workspace`) as

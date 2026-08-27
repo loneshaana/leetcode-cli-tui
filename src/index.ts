@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import * as log from './util/log';
+import { checkForUpdates } from './util/update';
 
 const program = new Command();
 
@@ -20,6 +21,9 @@ program
   .name('leetcode')
   .description('Work with LeetCode problems from your terminal: fetch, edit in a split-pane TUI, run and submit.')
   .version(pkgVersion());
+
+// Best-effort "a newer version is available" notice (cached, non-blocking).
+checkForUpdates(pkgVersion());
 
 program
   .command('login')
@@ -119,6 +123,13 @@ program
   .option('-a, --all', 'Show the full schedule, not just what is due')
   .option('-l, --limit <n>', 'Maximum problems to list', '15')
   .action(lazy(() => import('./commands/review.js'), 'reviewCommand'));
+
+program
+  .command('update')
+  .alias('upgrade')
+  .description('Check npm for a newer version and upgrade this CLI in place')
+  .option('--check', 'Only report whether an update is available; do not install')
+  .action(lazy(() => import('./commands/update.js'), 'updateCommand'));
 
 program.parseAsync(process.argv).catch((err) => {
   log.error((err as Error).message);
