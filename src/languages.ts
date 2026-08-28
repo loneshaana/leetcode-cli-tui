@@ -28,6 +28,14 @@ export const LANGUAGES: Record<string, LangInfo> = {
   swift: { slug: 'swift', ext: 'swift', name: 'Swift', line: '//', block: { start: '/*', end: '*/' } },
   ruby: { slug: 'ruby', ext: 'rb', name: 'Ruby', line: '#' },
   scala: { slug: 'scala', ext: 'scala', name: 'Scala', line: '//', block: { start: '/*', end: '*/' } },
+  // Database / data / shell problems (e.g. "SQL Schema" and Pandas problems).
+  // These have no general-purpose starter code — only these language slugs.
+  mysql: { slug: 'mysql', ext: 'sql', name: 'MySQL', line: '--', block: { start: '/*', end: '*/' } },
+  mssql: { slug: 'mssql', ext: 'sql', name: 'MS SQL Server', line: '--', block: { start: '/*', end: '*/' } },
+  oraclesql: { slug: 'oraclesql', ext: 'sql', name: 'Oracle SQL', line: '--', block: { start: '/*', end: '*/' } },
+  postgresql: { slug: 'postgresql', ext: 'sql', name: 'PostgreSQL', line: '--', block: { start: '/*', end: '*/' } },
+  pythondata: { slug: 'pythondata', ext: 'py', name: 'Pandas', line: '#' },
+  bash: { slug: 'bash', ext: 'sh', name: 'Bash', line: '#' },
 };
 
 /** Accepts a user-facing alias (e.g. "python", "js", "go") and returns the canonical LangInfo. */
@@ -44,6 +52,12 @@ export function resolveLang(input: string): LangInfo {
     'c#': 'csharp',
     cs: 'csharp',
     rs: 'rust',
+    sql: 'mysql',
+    postgres: 'postgresql',
+    postgre: 'postgresql',
+    pandas: 'pythondata',
+    shell: 'bash',
+    sh: 'bash',
   };
   const canonical = aliases[key] || key;
   const info = LANGUAGES[canonical];

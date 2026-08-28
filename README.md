@@ -9,6 +9,12 @@ in a **split-pane TUI** (problem description on the left, code editor on the rig
 
 Built with Node.js + TypeScript. Default solution language is **Java** (configurable).
 
+> **SQL / Pandas problems** (e.g. #2889 "Reshape Data: Pivot") have no Java/C++ starter
+> code. The CLI detects this and automatically generates the file in a language the
+> problem actually supports — MySQL/PostgreSQL/MS SQL/Oracle for database problems,
+> Pandas (`pythondata`) for data problems — and tells you it did so. You can also ask for
+> one directly, e.g. `leetcode show <slug> -L sql` (or `-L pandas`, `-L postgresql`).
+
 ## Install
 
 ### From npm (recommended)

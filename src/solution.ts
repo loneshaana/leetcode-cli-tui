@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Config, ensureWorkspace } from './config';
-import { LangInfo, langByExt, resolveLang } from './languages';
+import { LangInfo, LANGUAGES, langByExt, resolveLang } from './languages';
 import { Problem } from './api/types';
 import { htmlToText } from './render';
 
@@ -41,13 +41,63 @@ export function solutionPath(config: Config, problem: Problem, lang: LangInfo): 
   return path.join(ws, `${problem.frontendId}-${safeSlug}.${lang.ext}`);
 }
 
+/**
+ * Preference order used when the requested language isn't offered by a problem.
+ * Database dialects first, then Pandas, then shell, then general-purpose langs.
+ */
+const FALLBACK_PRIORITY = [
+  'mysql',
+  'postgresql',
+  'mssql',
+  'oraclesql',
+  'pythondata',
+  'bash',
+  'python3',
+  'java',
+  'cpp',
+  'javascript',
+];
+
+export interface LangChoice {
+  lang: LangInfo;
+  /** True when the requested language wasn't offered and another was picked. */
+  fellBack: boolean;
+  /** Human-friendly name of the originally requested language (for messaging). */
+  requestedName: string;
+}
+
+/**
+ * Decide which language to generate for a problem. The requested language is
+ * honored when the problem ships starter code for it; otherwise — e.g. for
+ * SQL/Pandas-only problems such as 2889 "Reshape Data: Pivot", which offer no
+ * Java/C++/etc. snippet — this falls back to a language the problem actually
+ * supports, preferring the order in FALLBACK_PRIORITY.
+ */
+export function chooseLang(problem: Problem, langInput: string): LangChoice {
+  const requested = resolveLang(langInput);
+  const offers = (slug: string): boolean =>
+    problem.codeSnippets.some((s) => s.langSlug === slug);
+  if (offers(requested.slug)) {
+    return { lang: requested, fellBack: false, requestedName: requested.name };
+  }
+  const available = problem.codeSnippets
+    .map((s) => s.langSlug)
+    .filter((slug) => LANGUAGES[slug]);
+  if (available.length === 0) {
+    // Nothing we recognise; keep the requested language (starter becomes a note).
+    return { lang: requested, fellBack: false, requestedName: requested.name };
+  }
+  const pick = FALLBACK_PRIORITY.find((slug) => available.includes(slug)) || available[0];
+  return { lang: LANGUAGES[pick], fellBack: true, requestedName: requested.name };
+}
+
 /** Generate the full solution file contents (metadata header + description + code). */
 export function renderSolutionFile(
   problem: Problem,
   langInput: string,
   showMeta = true
-): { lang: LangInfo; content: string } {
-  const lang = resolveLang(langInput);
+): { lang: LangInfo; content: string; fellBack: boolean; requestedName: string } {
+  const { lang, fellBack, requestedName } = chooseLang(problem, langInput);
   const snippet = problem.codeSnippets.find((s) => s.langSlug === lang.slug);
   const starter = snippet ? snippet.code : `${lang.line} No starter code available for ${lang.name}.`;
 
@@ -78,7 +128,7 @@ export function renderSolutionFile(
     '',
   ].join('\n');
 
-  return { lang, content: body };
+  return { lang, content: body, fellBack, requestedName };
 }
 
 /** Write the solution file if absent; never clobbers existing edits. */
@@ -87,14 +137,18 @@ export function writeSolutionFile(
   problem: Problem,
   langInput: string,
   overwrite = false
-): { filePath: string; created: boolean; lang: LangInfo } {
-  const { lang, content } = renderSolutionFile(problem, langInput, config.tags !== false);
+): { filePath: string; created: boolean; lang: LangInfo; fellBack: boolean; requestedName: string } {
+  const { lang, content, fellBack, requestedName } = renderSolutionFile(
+    problem,
+    langInput,
+    config.tags !== false
+  );
   const filePath = solutionPath(config, problem, lang);
   if (fs.existsSync(filePath) && !overwrite) {
-    return { filePath, created: false, lang };
+    return { filePath, created: false, lang, fellBack, requestedName };
   }
   fs.writeFileSync(filePath, content, 'utf8');
-  return { filePath, created: true, lang };
+  return { filePath, created: true, lang, fellBack, requestedName };
 }
 
 /** Parse a solution file: extract metadata and the editable code region. */

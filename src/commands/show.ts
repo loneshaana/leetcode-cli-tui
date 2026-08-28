@@ -41,7 +41,15 @@ export async function showCommand(ref: string, opts: ShowOptions): Promise<void>
 
   if (opts.gen !== false) {
     const lang = opts.lang || config.lang;
-    const { filePath, created } = writeSolutionFile(config, problem, lang, opts.overwrite);
+    const { filePath, created, lang: chosen, fellBack, requestedName } = writeSolutionFile(
+      config,
+      problem,
+      lang,
+      opts.overwrite
+    );
+    if (fellBack) {
+      log.warn(`${requestedName} isn't available for this problem; generated ${chosen.name} instead.`);
+    }
     if (created) log.success(`Solution file: ${filePath}`);
     else log.info(`Solution file already exists: ${filePath} (use --overwrite to reset)`);
     process.stderr.write(pc.dim(`Edit it, then: leetcode run "${filePath}"  |  leetcode submit "${filePath}"\n`));

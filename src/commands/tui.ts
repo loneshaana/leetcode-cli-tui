@@ -1,8 +1,7 @@
 import { LeetCodeClient } from '../api/client';
 import { loadConfig, requireCookies } from '../config';
 import { resolveProblem } from '../util/resolve';
-import { writeSolutionFile, solutionPath } from '../solution';
-import { resolveLang } from '../languages';
+import { writeSolutionFile } from '../solution';
 import { runTui } from '../tui/app';
 import * as log from '../util/log';
 
@@ -23,10 +22,18 @@ export async function tuiCommand(ref: string, opts: TuiOptions): Promise<void> {
   }
 
   const langInput = opts.lang || config.lang;
-  const lang = resolveLang(langInput);
-  // Create the file if missing (keeps existing edits otherwise).
-  writeSolutionFile(config, problem, langInput, false);
-  const filePath = solutionPath(config, problem, lang);
+  // Create the file if missing (keeps existing edits otherwise). For SQL/Pandas
+  // -only problems the requested language may not be offered, so use whatever
+  // language (and path) writeSolutionFile actually chose.
+  const { lang, filePath, fellBack, requestedName } = writeSolutionFile(
+    config,
+    problem,
+    langInput,
+    false
+  );
+  if (fellBack) {
+    log.warn(`${requestedName} isn't available for this problem; using ${lang.name} instead.`);
+  }
 
   await runTui({ client, problem, filePath });
   log.info('Closed TUI. Your work is saved at:');
