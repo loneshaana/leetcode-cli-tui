@@ -25,8 +25,9 @@ export async function syncCommand(opts: SyncOptions): Promise<void> {
         `  1. Create an empty repo on GitHub (e.g. leetcode-solutions).\n` +
         `  2. cd ${dir}\n` +
         `  3. git remote add origin <your-repo-url>\n` +
-        `  4. git branch -M main && git push -u origin main\n` +
-        `  5. Enable auto-sync: ${pc.cyan('leetcode config --git-sync on')}\n`
+        `  4. Enable auto-sync: ${pc.cyan('leetcode config --git-sync on')}\n` +
+        `\nThat's it — the first Accepted solution (or ${pc.cyan('leetcode sync')}) will make\n` +
+        `the initial commit and push, setting the upstream automatically.\n`
     );
     return;
   }

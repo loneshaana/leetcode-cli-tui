@@ -375,9 +375,10 @@ leetcode sync                        # manually commit & push any pending soluti
 
 Auto-sync writes clean solution code to `<git-dir>/solutions/<id>-<slug>.<ext>`, commits it
 (message template `Solve {id}. {title} [{difficulty}] ({lang})`), and pushes using your
-existing git credentials. It relies on a repo with a configured remote and upstream; if any of
-those are missing it prints guidance and **never blocks your submission**. Requires `git`
-installed and `user.name` / `user.email` configured.
+existing git credentials. On the **first push** it sets the upstream automatically
+(`git push -u origin <branch>`), so you only need to add a remote once — no manual first
+push. If a remote is missing it prints guidance and **never blocks your submission**.
+Requires `git` installed and `user.name` / `user.email` configured.
 
 ### `leetcode update` (alias `upgrade`)
 

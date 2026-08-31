@@ -116,12 +116,23 @@ async function commitAndPush(
     return { status: 'error', message, detail: (commit.stderr.trim() || 'git commit failed') + hint };
   }
   if (!push) return { status: 'committed', pushed: false, message };
-  const pushed = await git(dir, ['push'], 30000);
+  let pushed = await git(dir, ['push'], 30000);
+  // First push on a fresh branch has no upstream. If a remote exists, retry with
+  // `push -u origin <branch>` so the very first sync just works.
+  if (pushed.code !== 0 && /no upstream|set-upstream|has no upstream branch/i.test(pushed.stderr)) {
+    const branch = (await git(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim() || 'HEAD';
+    const remote = await git(dir, ['remote']);
+    const remotes = remote.stdout.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+    if (remotes.length > 0) {
+      const target = remotes.includes('origin') ? 'origin' : remotes[0];
+      pushed = await git(dir, ['push', '-u', target, branch], 30000);
+    }
+  }
   if (pushed.code !== 0) {
-    const hint = /no upstream|set-upstream|no configured push destination|does not appear to be a git repo/i.test(
+    const hint = /no upstream|set-upstream|no configured push destination|does not appear to be a git repo|no such remote|'origin'/i.test(
       pushed.stderr
     )
-      ? ' (add a remote and set an upstream: git push -u origin <branch>)'
+      ? ' (add a remote first: git -C <dir> remote add origin <url>)'
       : '';
     return {
       status: 'committed',
