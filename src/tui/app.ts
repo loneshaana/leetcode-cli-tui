@@ -15,6 +15,7 @@ import { CodeEditor } from './editor';
 import { configureColors, getThemeUi } from './highlight';
 import { loadConfig, recordSolved, recordSolveTime, recordTimeSpent, formatDuration, computeStats } from '../config';
 import { acceptedBannerTags, encouragementTags, welcomeTags, newlyUnlocked } from './fun';
+import { syncSolvedSolution } from '../util/gitsync';
 
 export interface TuiParams {
   client: LeetCodeClient;
@@ -749,8 +750,25 @@ export function runTui(params: TuiParams): Promise<void> {
           const { best, isPB } = recordSolveTime(problem.titleSlug, elapsed);
           const badges = newlyUnlocked(before, computeStats());
           if (loadConfig().bell !== false) screen.program.bell();
+          let syncTag = '';
+          const sync = await syncSolvedSolution({
+            frontendId: problem.frontendId,
+            slug: problem.titleSlug,
+            title: problem.title,
+            lang: langOf(filePath),
+            difficulty: problem.difficulty,
+            code: editor.getValue(),
+          });
+          if (sync.status === 'committed') {
+            const note = `git: committed${sync.pushed ? ' & pushed' : ''}${sync.detail ? ' — ' + sync.detail : ''}`;
+            syncTag = `{green-fg}${blessed.escape(note)}{/green-fg}\n`;
+          } else if (sync.status === 'error') {
+            syncTag = `{yellow-fg}${blessed.escape('git sync skipped: ' + (sync.detail || ''))}{/yellow-fg}\n`;
+          }
           setRichOutput(
-            acceptedBannerTags(solved, { seconds: elapsed, best, isPB, badges }) + blessed.escape(body)
+            acceptedBannerTags(solved, { seconds: elapsed, best, isPB, badges }) +
+              syncTag +
+              blessed.escape(body)
           );
         } else if (result.compile_error || result.full_compile_error) {
           setOutput(body);

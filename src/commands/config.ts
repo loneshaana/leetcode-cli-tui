@@ -11,6 +11,9 @@ interface ConfigOptions {
   bell?: string;
   tags?: string;
   theme?: string;
+  gitSync?: string;
+  gitDir?: string;
+  gitPush?: string;
 }
 
 export async function configCommand(opts: ConfigOptions): Promise<void> {
@@ -61,6 +64,28 @@ export async function configCommand(opts: ConfigOptions): Promise<void> {
     updateConfig({ theme: t });
     changed.push(`theme = ${t}`);
   }
+  if (opts.gitSync !== undefined) {
+    const v = opts.gitSync.trim().toLowerCase();
+    if (!['on', 'off', 'true', 'false'].includes(v)) {
+      throw new Error('--git-sync expects "on" or "off"');
+    }
+    const enabled = v === 'on' || v === 'true';
+    updateConfig({ gitSync: enabled });
+    changed.push(`git sync = ${enabled ? 'on' : 'off'}`);
+  }
+  if (opts.gitDir !== undefined) {
+    updateConfig({ gitSyncDir: opts.gitDir });
+    changed.push(`git dir = ${opts.gitDir}`);
+  }
+  if (opts.gitPush !== undefined) {
+    const v = opts.gitPush.trim().toLowerCase();
+    if (!['on', 'off', 'true', 'false'].includes(v)) {
+      throw new Error('--git-push expects "on" or "off"');
+    }
+    const enabled = v === 'on' || v === 'true';
+    updateConfig({ gitSyncPush: enabled });
+    changed.push(`git push = ${enabled ? 'on' : 'off'}`);
+  }
 
   const cfg = loadConfig();
   if (changed.length) {
@@ -74,6 +99,9 @@ export async function configCommand(opts: ConfigOptions): Promise<void> {
   process.stdout.write(`  bell:      ${cfg.bell === false ? 'off' : pc.green('on')}\n`);
   process.stdout.write(`  tags:      ${cfg.tags === false ? 'off' : pc.green('on')}\n`);
   process.stdout.write(`  theme:     ${cfg.theme || 'default'} ${pc.dim(`(${themeNames().join(', ')})`)}\n`);
+  process.stdout.write(`  git sync:  ${cfg.gitSync ? pc.green('on') : 'off'}\n`);
+  process.stdout.write(`  git dir:   ${cfg.gitSyncDir || cfg.workspace}\n`);
+  process.stdout.write(`  git push:  ${cfg.gitSyncPush === false ? 'off' : pc.green('on')}\n`);
   process.stdout.write(`  logged in: ${cfg.cookies?.session ? pc.green('yes') : pc.red('no')}\n`);
   if (cfg.cookies?.capturedAt) {
     process.stdout.write(`  session:   captured ${cfg.cookies.capturedAt}\n`);

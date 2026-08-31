@@ -45,6 +45,8 @@ Built with Node.js + TypeScript. Default solution language is **Java** (configur
   **Pandas** problems, auto-detected when a problem has no general-purpose starter code.
 - **Progress & motivation** — persisted per-problem timer, solve streaks, difficulty
   breakdown, achievement badges, and a spaced-repetition review schedule.
+- **GitHub sync** — optionally auto-commit (and push) every Accepted solution to a git
+  repository, so your solved problems back up to GitHub automatically.
 - **Themes** — pick a syntax theme (`default`, `dracula`, `monokai`, `solarized`, `neon`, `mono`).
 - **Self-updating** — a `leetcode update` command plus an unobtrusive "new version available"
   notice.
@@ -242,6 +244,7 @@ leetcode config                     # view or change settings
 leetcode stats                      # solved count, streaks, breakdown
 leetcode random                     # pick a random problem
 leetcode review                     # spaced-repetition review
+leetcode sync                       # commit & push solutions to your git repo
 leetcode update                     # upgrade to the latest version
 ```
 
@@ -324,6 +327,9 @@ View settings, or change them with any of:
 - `--bell <on|off>` — ring the terminal bell on Accepted.
 - `--tags <on|off>` — show/hide topic tags **and** difficulty (hide to avoid spoilers).
 - `--theme <name>` — syntax theme: `default`, `dracula`, `monokai`, `solarized`, `neon`, `mono`.
+- `--git-sync <on|off>` — auto-commit each Accepted solution to a git repo.
+- `--git-dir <dir>` — git repo directory for synced solutions (default: workspace).
+- `--git-push <on|off>` — also `git push` after committing (default `on`).
 
 ```bash
 leetcode config
@@ -351,6 +357,28 @@ Spaced-repetition schedule: which solved problems are due for another look.
 - `-a, --all` — show the full schedule, not just what's due.
 - `-l, --limit <n>` — maximum problems to list (default `15`).
 
+### `leetcode sync`
+
+Commit and push your solutions to a git repository. Useful for backing up solved problems to
+GitHub. Enable automatic syncing on every Accepted submission with
+`leetcode config --git-sync on`.
+
+- `--init` — initialize a git repo in the sync directory and print the steps to add a GitHub
+  remote.
+- `-m, --message <msg>` — commit message (default `Update LeetCode solutions`).
+
+```bash
+leetcode sync --init                 # one-time: set up the repo, then add a remote
+leetcode config --git-sync on        # auto-commit + push each Accepted solution
+leetcode sync                        # manually commit & push any pending solutions
+```
+
+Auto-sync writes clean solution code to `<git-dir>/solutions/<id>-<slug>.<ext>`, commits it
+(message template `Solve {id}. {title} [{difficulty}] ({lang})`), and pushes using your
+existing git credentials. It relies on a repo with a configured remote and upstream; if any of
+those are missing it prints guidance and **never blocks your submission**. Requires `git`
+installed and `user.name` / `user.email` configured.
+
 ### `leetcode update` (alias `upgrade`)
 
 Check npm for a newer version and upgrade in place.
@@ -369,6 +397,9 @@ Settings live in `~/.leetcode-cli/config.json` and are managed with `leetcode co
 | Bell | `--bell` | `on` | Ring the terminal bell on Accepted. |
 | Tags | `--tags` | `on` | Show topic tags + difficulty (hide to avoid spoilers). |
 | Theme | `--theme` | `default` | Editor syntax theme. |
+| Git sync | `--git-sync` | `off` | Auto-commit each Accepted solution to a git repo. |
+| Git dir | `--git-dir` | workspace | Git repo directory for synced solutions. |
+| Git push | `--git-push` | `on` | Also `git push` after committing. |
 
 Solution files are written as `<workspace>/<id>-<slug>.<ext>`, e.g. `1-two-sum.java`.
 

@@ -24,6 +24,14 @@ export interface Config {
   bell?: boolean;
   /** Show the problem's topic tags in the TUI Info panel (default true). */
   tags?: boolean;
+  /** Auto-commit each Accepted solution to a git repo (default false). */
+  gitSync?: boolean;
+  /** Git repository directory to sync solutions into (default: workspace). */
+  gitSyncDir?: string;
+  /** Also `git push` after committing an Accepted solution (default true). */
+  gitSyncPush?: boolean;
+  /** Commit message template. Placeholders: {id} {slug} {title} {difficulty} {lang}. */
+  gitSyncMessage?: string;
   /** Slugs of problems you've had Accepted (for the solved counter). */
   solved?: string[];
   /** Chronological log of Accepted submissions (for streaks & stats). */

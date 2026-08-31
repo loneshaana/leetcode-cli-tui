@@ -99,6 +99,9 @@ program
   .option('--bell <state>', 'Ring the terminal bell on Accepted (on|off)')
   .option('--tags <state>', 'Show problem topic tags in the TUI Info panel (on|off)')
   .option('--theme <name>', 'Editor syntax theme (default|dracula|monokai|solarized|neon|mono)')
+  .option('--git-sync <state>', 'Auto-commit each Accepted solution to a git repo (on|off)')
+  .option('--git-dir <dir>', 'Git repo directory for synced solutions (default: workspace)')
+  .option('--git-push <state>', 'Also git push after committing an Accepted solution (on|off)')
   .action(lazy(() => import('./commands/config.js'), 'configCommand'));
 
 program
@@ -130,6 +133,13 @@ program
   .description('Check npm for a newer version and upgrade this CLI in place')
   .option('--check', 'Only report whether an update is available; do not install')
   .action(lazy(() => import('./commands/update.js'), 'updateCommand'));
+
+program
+  .command('sync')
+  .description('Commit & push your solutions to the configured git repository')
+  .option('--init', 'Initialize a git repo in the sync directory and print setup steps')
+  .option('-m, --message <msg>', 'Commit message (default: "Update LeetCode solutions")')
+  .action(lazy(() => import('./commands/sync.js'), 'syncCommand'));
 
 program.parseAsync(process.argv).catch((err) => {
   log.error((err as Error).message);

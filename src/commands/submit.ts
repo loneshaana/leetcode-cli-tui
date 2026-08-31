@@ -5,6 +5,7 @@ import { loadConfig, requireCookies, recordSolved } from '../config';
 import { parseSolutionFile } from '../solution';
 import { formatSubmitResult } from '../results';
 import { celebrateCli } from '../tui/fun';
+import { syncSolvedSolution } from '../util/gitsync';
 import * as log from '../util/log';
 
 export async function submitCommand(file: string): Promise<void> {
@@ -38,5 +39,23 @@ export async function submitCommand(file: string): Promise<void> {
     const solved = recordSolved(meta.slug);
     if (config.bell !== false) process.stderr.write('\x07');
     process.stdout.write('\n' + celebrateCli(solved) + '\n');
+    const sync = await syncSolvedSolution(
+      {
+        frontendId: meta.frontendId,
+        slug: meta.slug,
+        title: meta.title || meta.slug,
+        lang: meta.lang,
+        code,
+      },
+      config
+    );
+    if (sync.status === 'committed') {
+      log.success(
+        `git: committed${sync.pushed ? ' & pushed' : ''} ${meta.slug}` +
+          (sync.detail ? ` — ${sync.detail}` : '')
+      );
+    } else if (sync.status === 'error') {
+      log.warn(`git sync skipped: ${sync.detail}`);
+    }
   }
 }
