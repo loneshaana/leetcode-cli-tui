@@ -26,6 +26,13 @@ export interface EditorBehavior {
   onSave?: () => void;
   /** Invoked by the vim `:q` / `:wq` command. */
   onQuit?: () => void;
+  /**
+   * Optional coalesced-paint hook. When provided, the editor requests a screen
+   * repaint through this instead of calling `screen.render()` directly, so
+   * multiple synchronous renders in one key event collapse into a single paint.
+   * The host is responsible for placing the caret after painting.
+   */
+  requestRender?: () => void;
 }
 
 interface Snapshot {
@@ -69,6 +76,21 @@ export class CodeEditor {
   private left = 0; // first visible column
   private readonly tabWidth = 4;
   private readonly ui: ThemeUi;
+  // Self-validating per-line block-state cache (multi-line comment / string
+  // nesting). `blkCache[k]` is only trusted when its `text` still matches
+  // `lines[k]` and its incoming state `in` matches — so edits and line shifts
+  // recompute lazily without any explicit invalidation. Removes the O(n)
+  // tokenize prefix scan that otherwise ran on every render/keystroke.
+  private blkCache: Array<{ text: string; in: number; out: number }> = [];
+  // Monotonic edit counter (bumped on every buffer mutation via markDirty) used
+  // to invalidate render-time memos such as the bracket-match cache below.
+  private editRev = 0;
+  private bracketCache: {
+    rev: number;
+    y: number;
+    x: number;
+    result: { y: number; x: number } | null;
+  } | null = null;
 
   // Vim state.
   private vimEnabled = false;
@@ -193,6 +215,8 @@ export class CodeEditor {
 
   setValue(value: string): void {
     this.lines = this.normalizeToLines(value);
+    this.blkCache = [];
+    this.bracketCache = null;
     this.cy = Math.min(this.cy, this.lines.length - 1);
     this.cx = Math.min(this.cx, this.lines[this.cy].length);
     this.undoStack = [];
@@ -208,6 +232,7 @@ export class CodeEditor {
   resetTo(value: string): void {
     this.pushUndo();
     this.lines = this.normalizeToLines(value);
+    this.blkCache = [];
     this.cy = 0;
     this.cx = 0;
     this.top = 0;
@@ -298,12 +323,26 @@ export class CodeEditor {
     return digits + 1;
   }
 
+  /**
+   * Block-comment / multi-line-string state after line `idx`, given the state
+   * `inBlk` entering it. Uses the self-validating cache so unchanged lines cost
+   * only a string reference compare instead of a full re-tokenize.
+   */
+  private blockOut(idx: number, line: string, inBlk: number, lang: string): number {
+    const c = this.blkCache[idx];
+    if (c && c.text === line && c.in === inBlk) return c.out;
+    const out = blockStateAfter(line, lang, inBlk);
+    this.blkCache[idx] = { text: line, in: inBlk, out };
+    return out;
+  }
+
   render(): void {
     const H = this.innerHeight();
     const gutter = this.gutterWidth();
     const W = this.innerWidth() - gutter;
     if (H <= 0 || W <= 0) {
-      this.screen.render();
+      if (this.behavior.requestRender) this.behavior.requestRender();
+      else this.screen.render();
       return;
     }
 
@@ -324,7 +363,17 @@ export class CodeEditor {
     if (useTags && !sel) {
       const cur = this.lines[this.cy]?.[this.cx];
       if (cur && '()[]{}'.includes(cur)) {
-        const m = this.bracketMatch(this.cy, this.cx);
+        // Bracket matching can scan to EOF/BOF for an unbalanced bracket; memoise
+        // by edit revision + caret so idle re-renders (e.g. the 1s clock) don't
+        // rescan the buffer while the caret rests on a bracket.
+        const cache = this.bracketCache;
+        let m: { y: number; x: number } | null;
+        if (cache && cache.rev === this.editRev && cache.y === this.cy && cache.x === this.cx) {
+          m = cache.result;
+        } else {
+          m = this.bracketMatch(this.cy, this.cx);
+          this.bracketCache = { rev: this.editRev, y: this.cy, x: this.cx, result: m };
+        }
         if (m) bm = { ay: this.cy, ax: this.cx, by: m.y, bx: m.x };
       }
     }
@@ -337,7 +386,7 @@ export class CodeEditor {
     let blk = -1;
     if (useTags && lang) {
       for (let k = 0; k < this.top && k < this.lines.length; k++) {
-        blk = blockStateAfter(this.lines[k], lang, blk);
+        blk = this.blockOut(k, this.lines[k], blk, lang);
       }
     }
 
@@ -375,7 +424,7 @@ export class CodeEditor {
 
       // Advance block state for the next row (also across selected rows, which
       // are rendered without highlighting).
-      if (useTags && lang) blk = blockStateAfter(line, lang, blk);
+      if (useTags && lang) blk = this.blockOut(idx, line, blk, lang);
 
       if (gutter > 0) {
         const num = String(idx + 1).padStart(digits) + ' ';
@@ -392,8 +441,12 @@ export class CodeEditor {
     }
 
     this.box.setContent(rows.join('\n'));
-    this.screen.render();
-    this.placeCaret();
+    if (this.behavior.requestRender) {
+      this.behavior.requestRender();
+    } else {
+      this.screen.render();
+      this.placeCaret();
+    }
   }
 
   /**
@@ -492,6 +545,7 @@ export class CodeEditor {
   }
 
   private markDirty(): void {
+    this.editRev++;
     this.onDirty();
   }
 

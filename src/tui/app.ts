@@ -151,6 +151,7 @@ export function runTui(params: TuiParams): Promise<void> {
         onStatus: (text) => setVimStatus(text),
         onSave: () => saveCode(),
         onQuit: () => quit(),
+        requestRender: () => requestRender(),
       }
     );
 
@@ -268,7 +269,8 @@ export function runTui(params: TuiParams): Promise<void> {
         width: '100%-2',
         height: '100%-3',
       },
-      () => screen.render()
+      () => requestRender(),
+      { requestRender: () => requestRender() }
     );
 
     /** null = use the problem's example test cases. */
@@ -301,8 +303,8 @@ export function runTui(params: TuiParams): Promise<void> {
     const pathEditor = new CodeEditor(
       screen,
       { parent: savePopup, top: 1, left: 1, width: '100%-3', height: 1 },
-      () => screen.render(),
-      { onSubmit: (value) => confirmSave(value) }
+      () => requestRender(),
+      { onSubmit: (value) => confirmSave(value), requestRender: () => requestRender() }
     );
 
     const focusables: Array<() => void> = [
@@ -321,6 +323,10 @@ export function runTui(params: TuiParams): Promise<void> {
     // sessions on this problem.
     const timerSlug = problem.titleSlug;
     const baseElapsed = loadConfig().timeSpent?.[timerSlug] ?? 0;
+    // Personal-best for this problem, cached so the 1s status clock doesn't
+    // re-read and re-parse the config file from disk on every tick. Updated
+    // in-process whenever a new PB is recorded this session.
+    let bestTime: number | undefined = loadConfig().bestTimes?.[timerSlug];
     // Track in milliseconds so sub-second running segments aren't lost each time
     // the timer is paused (flooring only happens when we expose/persist whole
     // seconds). `accumulatedMs` holds completed segments; `runningSince` marks
@@ -372,6 +378,20 @@ export function runTui(params: TuiParams): Promise<void> {
       else screen.program.hideCursor();
     }
 
+    // Coalesced repaint: multiple render requests in one synchronous key event
+    // (e.g. the editor's own render plus a status-bar update) collapse into a
+    // single screen.render() on the next microtask, halving full-screen layouts.
+    let renderScheduled = false;
+    function requestRender(): void {
+      if (renderScheduled) return;
+      renderScheduled = true;
+      queueMicrotask(() => {
+        renderScheduled = false;
+        screen.render();
+        placeCaret();
+      });
+    }
+
     function openSave(): void {
       saveOpen = true;
       pathEditor.setValue(defaultExportPath(filePath, parseSolutionFile(filePath).meta));
@@ -416,7 +436,7 @@ export function runTui(params: TuiParams): Promise<void> {
       const time = paused
         ? `{grey-fg}{bold}⏸ ${clock()} paused{/bold}{/grey-fg}`
         : `{yellow-fg}{bold}⏱ ${clock()}{/bold}{/yellow-fg}`;
-      const pb = loadConfig().bestTimes?.[timerSlug];
+      const pb = bestTime;
       const best = pb ? ` {grey-fg}·{/grey-fg} {magenta-fg}best ${formatDuration(pb)}{/magenta-fg}` : '';
       const pos = editor.isFocused()
         ? (() => {
@@ -431,8 +451,7 @@ export function runTui(params: TuiParams): Promise<void> {
         ? ` {red-fg}●{/red-fg}{grey-fg} unsaved{/grey-fg}`
         : ` {green-fg}●{/green-fg}{grey-fg} saved{/grey-fg}`;
       status.setContent(` ${time}${best}${pos}${mode}${flag}  {grey-fg}│{/grey-fg}  ${HELP} `);
-      screen.render();
-      placeCaret();
+      requestRender();
     }
 
     function setVimStatus(text: string): void {
@@ -749,6 +768,7 @@ export function runTui(params: TuiParams): Promise<void> {
           const elapsed = sessionSeconds();
           persistTime();
           const { best, isPB } = recordSolveTime(problem.titleSlug, elapsed);
+          bestTime = best;
           const badges = newlyUnlocked(before, computeStats());
           if (loadConfig().bell !== false) screen.program.bell();
           // Show the celebration banner immediately — git work must never block it.
@@ -1249,6 +1269,11 @@ function readCode(filePath: string): string {
   }
 }
 
+// Language metadata is invariant for a given file during a TUI session (the
+// editor's highlight language is fixed at construction), so cache it to avoid
+// re-reading and re-parsing the whole solution file on every run/submit.
+const langCache = new Map<string, string>();
+
 /** The original starter code for the file's language, straight from the problem. */
 function starterCode(problem: Problem, filePath: string): string {
   const lang = langOf(filePath);
@@ -1257,5 +1282,9 @@ function starterCode(problem: Problem, filePath: string): string {
 }
 
 function langOf(filePath: string): string {
-  return parseSolutionFile(filePath).meta.lang;
+  const cached = langCache.get(filePath);
+  if (cached !== undefined) return cached;
+  const lang = parseSolutionFile(filePath).meta.lang;
+  langCache.set(filePath, lang);
+  return lang;
 }
