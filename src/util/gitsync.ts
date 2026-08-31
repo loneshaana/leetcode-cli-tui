@@ -26,6 +26,8 @@ export interface SolvedInfo {
 export interface SyncResult {
   status: 'disabled' | 'committed' | 'nochange' | 'error';
   pushed?: boolean;
+  /** True when the commit succeeded but the push failed (report as a warning). */
+  pushFailed?: boolean;
   file?: string;
   message?: string;
   detail?: string;
@@ -40,32 +42,37 @@ interface GitResult {
 /** Run a git command in `dir`, resolving (never rejecting) with the result. */
 function git(dir: string, args: string[], timeoutMs = 20000): Promise<GitResult> {
   return new Promise((resolve) => {
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    const finish = (r: GitResult): void => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(r);
+    };
     let child;
     try {
       child = spawn('git', ['-C', dir, ...args], { windowsHide: true });
     } catch (e) {
-      resolve({ code: -1, stdout: '', stderr: (e as Error).message });
+      finish({ code: -1, stdout: '', stderr: (e as Error).message });
       return;
     }
     let out = '';
     let err = '';
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       try {
         child.kill();
       } catch {
         /* ignore */
       }
+      // Resolve on timeout regardless of whether `close` ever fires, so a stuck
+      // git process (e.g. a hanging credential/SSH helper) can never hang submit.
+      finish({ code: -1, stdout: out, stderr: (err ? err + '\n' : '') + 'git command timed out' });
     }, timeoutMs);
     child.stdout?.on('data', (d) => (out += d));
     child.stderr?.on('data', (d) => (err += d));
-    child.on('error', (e) => {
-      clearTimeout(timer);
-      resolve({ code: -1, stdout: out, stderr: err || (e as Error).message });
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      resolve({ code: code ?? -1, stdout: out, stderr: err });
-    });
+    child.on('error', (e) => finish({ code: -1, stdout: out, stderr: err || (e as Error).message }));
+    child.on('close', (code) => finish({ code: code ?? -1, stdout: out, stderr: err }));
   });
 }
 
@@ -105,7 +112,7 @@ function commitMessage(config: Config, info: SolvedInfo): string {
     .replace(/\{title\}/g, info.title || info.slug)
     .replace(/\{difficulty\}/g, info.difficulty || '')
     .replace(/\{lang\}/g, info.lang)
-    .replace(/\s{2,}/g, ' ')
+    .replace(/ {2,}/g, ' ')
     .trim();
 }
 
@@ -124,8 +131,11 @@ async function commitAndPush(
     return { status: 'error', detail: add.stderr.trim() || 'git add failed' };
   }
   const staged = await git(dir, ['diff', '--cached', '--quiet', '--', ...addPaths]);
-  // exit 0 => no staged changes; exit 1 => changes present.
+  // exit 0 => no staged changes; exit 1 => changes present; anything else is an error.
   if (staged.code === 0) return { status: 'nochange' };
+  if (staged.code !== 1) {
+    return { status: 'error', detail: staged.stderr.trim() || 'git diff failed' };
+  }
   const commit = await git(dir, ['commit', '-m', message, '--', ...addPaths]);
   if (commit.code !== 0) {
     const hint = /user\.(name|email)|please tell me who you are/i.test(commit.stderr)
@@ -136,13 +146,19 @@ async function commitAndPush(
   if (!push) return { status: 'committed', pushed: false, message };
   let pushed = await git(dir, ['push'], 30000);
   // First push on a fresh branch has no upstream. If a remote exists, retry with
-  // `push -u origin <branch>` so the very first sync just works.
+  // `push -u <remote> <branch>` so the very first sync just works.
   if (pushed.code !== 0 && /no upstream|set-upstream|has no upstream branch/i.test(pushed.stderr)) {
-    const branch = (await git(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim() || 'HEAD';
+    const branch = (await git(dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
     const remote = await git(dir, ['remote']);
     const remotes = remote.stdout.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
-    if (remotes.length > 0) {
-      const target = remotes.includes('origin') ? 'origin' : remotes[0];
+    // Prefer `origin`; fall back to the sole remote. With a detached HEAD or an
+    // ambiguous set of remotes we skip the retry rather than pushing somewhere wrong.
+    const target = remotes.includes('origin')
+      ? 'origin'
+      : remotes.length === 1
+        ? remotes[0]
+        : '';
+    if (branch && branch !== 'HEAD' && target) {
       pushed = await git(dir, ['push', '-u', target, branch], 30000);
     }
   }
@@ -155,6 +171,7 @@ async function commitAndPush(
     return {
       status: 'committed',
       pushed: false,
+      pushFailed: true,
       message,
       detail: (pushed.stderr.trim() || 'git push failed') + hint,
     };
@@ -228,10 +245,6 @@ export async function syncPending(
   }
 }
 
-/**
- * Initialize a git repository in the sync directory (idempotent) and ensure the
- * `solutions/` folder exists. Returns a human-readable status line.
- */
 /**
  * Initialize a git repository in the sync directory (idempotent). Returns a
  * human-readable status line.

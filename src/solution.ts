@@ -151,6 +151,23 @@ export function writeSolutionFile(
   return { filePath, created: true, lang, fellBack, requestedName };
 }
 
+/**
+ * Recover the human-readable problem title from a solution file's title line
+ * (`<comment> <frontendId>. <Title>  [<Difficulty>]`). Skips the metadata line
+ * and strips any trailing `[Difficulty]`. Returns '' when not found.
+ */
+function extractTitle(lines: string[], frontendId: string): string {
+  if (!frontendId) return '';
+  const escaped = frontendId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('^\\s*\\S+\\s+' + escaped + '\\.\\s+(.+?)\\s*$');
+  for (const l of lines) {
+    if (l.includes(META_PREFIX)) continue;
+    const m = re.exec(l);
+    if (m) return m[1].replace(/\s*\[[^\]]*\]\s*$/, '').trim();
+  }
+  return '';
+}
+
 /** Parse a solution file: extract metadata and the editable code region. */
 export function parseSolutionFile(filePath: string): ParsedSolution {
   const raw = fs.readFileSync(filePath, 'utf8');
@@ -202,7 +219,7 @@ export function parseSolutionFile(filePath: string): ParsedSolution {
       questionId: meta.questionId,
       frontendId: meta.frontendId || '',
       lang: meta.lang,
-      title: meta.slug,
+      title: extractTitle(lines, meta.frontendId || '') || meta.slug,
     },
     code: code.replace(/^\n+/, '').replace(/\n+$/, '\n'),
   };

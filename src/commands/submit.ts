@@ -50,11 +50,10 @@ export async function submitCommand(file: string): Promise<void> {
       },
       config
     );
-    if (sync.status === 'committed') {
-      log.success(
-        `git: committed${sync.pushed ? ' & pushed' : ''} ${meta.slug}` +
-          (sync.detail ? ` — ${sync.detail}` : '')
-      );
+    if (sync.status === 'committed' && !sync.pushFailed) {
+      log.success(`git: committed${sync.pushed ? ' & pushed' : ''} ${meta.slug}`);
+    } else if (sync.status === 'committed' && sync.pushFailed) {
+      log.warn(`git: committed ${meta.slug} locally, push failed — ${sync.detail}`);
     } else if (sync.status === 'error') {
       log.warn(`git sync skipped: ${sync.detail}`);
     }

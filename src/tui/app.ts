@@ -727,6 +727,7 @@ export function runTui(params: TuiParams): Promise<void> {
       busy = true;
       if (isZoomed()) toggleZoom(); // reveal the Output pane so results are visible
       saveCode();
+      const submittedCode = editor.getValue();
       startSpinner('Submitting...');
       setOutput('Submitting to LeetCode...');
       try {
@@ -734,7 +735,7 @@ export function runTui(params: TuiParams): Promise<void> {
           slug: problem.titleSlug,
           questionId: problem.questionId,
           lang: langOf(filePath),
-          code: editor.getValue(),
+          code: submittedCode,
         });
         const result = await client.waitForResult(
           submission_id,
@@ -750,7 +751,10 @@ export function runTui(params: TuiParams): Promise<void> {
           const { best, isPB } = recordSolveTime(problem.titleSlug, elapsed);
           const badges = newlyUnlocked(before, computeStats());
           if (loadConfig().bell !== false) screen.program.bell();
-          let syncTag = '';
+          // Show the celebration banner immediately — git work must never block it.
+          const bannerBase = acceptedBannerTags(solved, { seconds: elapsed, best, isPB, badges });
+          const bodyEsc = blessed.escape(body);
+          setRichOutput(bannerBase + bodyEsc);
           const sync = await syncSolvedSolution({
             frontendId: problem.frontendId,
             slug: problem.titleSlug,
@@ -758,19 +762,19 @@ export function runTui(params: TuiParams): Promise<void> {
             lang: langOf(filePath),
             difficulty: problem.difficulty,
             sourceFile: filePath,
-            code: editor.getValue(),
+            code: submittedCode,
           });
-          if (sync.status === 'committed') {
-            const note = `git: committed${sync.pushed ? ' & pushed' : ''}${sync.detail ? ' — ' + sync.detail : ''}`;
+          let syncTag = '';
+          if (sync.status === 'committed' && !sync.pushFailed) {
+            const note = `git: committed${sync.pushed ? ' & pushed' : ''}`;
             syncTag = `{green-fg}${blessed.escape(note)}{/green-fg}\n`;
+          } else if (sync.status === 'committed' && sync.pushFailed) {
+            const note = 'git: committed locally, push failed — ' + (sync.detail || '');
+            syncTag = `{yellow-fg}${blessed.escape(note)}{/yellow-fg}\n`;
           } else if (sync.status === 'error') {
             syncTag = `{yellow-fg}${blessed.escape('git sync skipped: ' + (sync.detail || ''))}{/yellow-fg}\n`;
           }
-          setRichOutput(
-            acceptedBannerTags(solved, { seconds: elapsed, best, isPB, badges }) +
-              syncTag +
-              blessed.escape(body)
-          );
+          if (syncTag) setRichOutput(bannerBase + syncTag + bodyEsc);
         } else if (result.compile_error || result.full_compile_error) {
           setOutput(body);
         } else {
