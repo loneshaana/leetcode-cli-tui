@@ -373,12 +373,20 @@ leetcode config --git-sync on        # auto-commit + push each Accepted solution
 leetcode sync                        # manually commit & push any pending solutions
 ```
 
-Auto-sync writes clean solution code to `<git-dir>/solutions/<id>-<slug>.<ext>`, commits it
-(message template `Solve {id}. {title} [{difficulty}] ({lang})`), and pushes using your
-existing git credentials. On the **first push** it sets the upstream automatically
-(`git push -u origin <branch>`), so you only need to add a remote once — no manual first
-push. If a remote is missing it prints guidance and **never blocks your submission**.
-Requires `git` installed and `user.name` / `user.email` configured.
+Because the sync directory defaults to your **workspace** — the same place your solution files
+are saved — auto-sync commits the *actual* solution file you just solved (e.g.
+`<workspace>/1-two-sum.java`) in place; no duplicate copy is made. (If you point `--git-dir` at
+a different repo, a clean copy is exported to `<git-dir>/solutions/<id>-<slug>.<ext>` instead.)
+
+Each commit gets a **dynamic, per-problem message**. The default is
+`Solve {id}. {title} [{difficulty}] ({lang})` → e.g. `Solve 1. Two Sum [Easy] (java)`. Customize
+it with `leetcode config --git-message "<template>"` using any of the placeholders `{id}`,
+`{slug}`, `{title}`, `{difficulty}`, `{lang}`.
+
+The commit is pushed using your existing git credentials. On the **first push** it sets the
+upstream automatically (`git push -u origin <branch>`), so you only add a remote once — no
+manual first push. If a remote is missing it prints guidance and **never blocks your
+submission**. Requires `git` installed and `user.name` / `user.email` configured.
 
 ### `leetcode update` (alias `upgrade`)
 
@@ -399,8 +407,9 @@ Settings live in `~/.leetcode-cli/config.json` and are managed with `leetcode co
 | Tags | `--tags` | `on` | Show topic tags + difficulty (hide to avoid spoilers). |
 | Theme | `--theme` | `default` | Editor syntax theme. |
 | Git sync | `--git-sync` | `off` | Auto-commit each Accepted solution to a git repo. |
-| Git dir | `--git-dir` | workspace | Git repo directory for synced solutions. |
+| Git dir | `--git-dir` | workspace | Git repo directory (defaults to your workspace). |
 | Git push | `--git-push` | `on` | Also `git push` after committing. |
+| Git message | `--git-message` | `Solve {id}. {title} [{difficulty}] ({lang})` | Commit message template. |
 
 Solution files are written as `<workspace>/<id>-<slug>.<ext>`, e.g. `1-two-sum.java`.
 

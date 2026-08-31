@@ -757,6 +757,7 @@ export function runTui(params: TuiParams): Promise<void> {
             title: problem.title,
             lang: langOf(filePath),
             difficulty: problem.difficulty,
+            sourceFile: filePath,
             code: editor.getValue(),
           });
           if (sync.status === 'committed') {

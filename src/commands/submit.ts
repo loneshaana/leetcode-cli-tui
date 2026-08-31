@@ -45,6 +45,7 @@ export async function submitCommand(file: string): Promise<void> {
         slug: meta.slug,
         title: meta.title || meta.slug,
         lang: meta.lang,
+        sourceFile: file,
         code,
       },
       config

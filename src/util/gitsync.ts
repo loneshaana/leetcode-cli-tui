@@ -13,7 +13,13 @@ export interface SolvedInfo {
   /** Canonical language slug (e.g. "java", "python3"). */
   lang: string;
   difficulty?: string;
-  /** Clean solution code (no problem description / metadata header). */
+  /**
+   * Path to the actual solution file on disk. When this file lives inside the
+   * sync directory it is committed in place (no duplication); otherwise a copy
+   * is exported into the repo.
+   */
+  sourceFile?: string;
+  /** Solution code, used as a fallback when the file is outside the sync dir. */
   code: string;
 }
 
@@ -80,15 +86,27 @@ function solutionRepoPath(dir: string, info: SolvedInfo): string {
   return path.join(dir, 'solutions', `${info.frontendId}-${info.slug}.${ext}`);
 }
 
+/** True when `child` is located inside `parent` (same dir counts as inside). */
+function isInside(parent: string, child: string): boolean {
+  const rel = path.relative(path.resolve(parent), path.resolve(child));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
 function commitMessage(config: Config, info: SolvedInfo): string {
-  const tmpl = config.gitSyncMessage || 'Solve {id}. {title}{difficulty} ({lang})';
-  const diff = info.difficulty ? ` [${info.difficulty}]` : '';
+  // Default template keeps the difficulty in brackets only when it's known, so
+  // no empty "[]" appears. Custom templates get the raw difficulty value.
+  const defaultTmpl = info.difficulty
+    ? 'Solve {id}. {title} [{difficulty}] ({lang})'
+    : 'Solve {id}. {title} ({lang})';
+  const tmpl = config.gitSyncMessage || defaultTmpl;
   return tmpl
     .replace(/\{id\}/g, info.frontendId)
     .replace(/\{slug\}/g, info.slug)
     .replace(/\{title\}/g, info.title || info.slug)
-    .replace(/\{difficulty\}/g, diff)
-    .replace(/\{lang\}/g, info.lang);
+    .replace(/\{difficulty\}/g, info.difficulty || '')
+    .replace(/\{lang\}/g, info.lang)
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 /**
@@ -162,8 +180,17 @@ export async function syncSolvedSolution(
         detail: `${dir} is not a git repository. Run "leetcode sync --init" there and add a remote.`,
       };
     }
-    const file = solutionRepoPath(dir, info);
-    exportSolutionCode(info.code, file);
+    // Prefer committing the actual solution file in place (the workspace is the
+    // repo), so we don't duplicate it into a separate folder. Fall back to
+    // exporting a clean copy only when the file lives outside the sync dir.
+    let file: string;
+    const src = info.sourceFile ? path.resolve(info.sourceFile) : '';
+    if (src && fs.existsSync(src) && isInside(dir, src)) {
+      file = src;
+    } else {
+      file = solutionRepoPath(dir, info);
+      exportSolutionCode(info.code, file);
+    }
     const rel = path.relative(dir, file) || file;
     const result = await commitAndPush(
       dir,
@@ -193,9 +220,9 @@ export async function syncPending(
         detail: `${dir} is not a git repository. Run "leetcode sync --init" there and add a remote.`,
       };
     }
-    const solDir = path.join(dir, 'solutions');
-    const addPath = fs.existsSync(solDir) ? 'solutions' : '.';
-    return await commitAndPush(dir, message, [addPath], config.gitSyncPush !== false);
+    // Solution files live directly in the sync dir, so stage the whole tree
+    // (honoring .gitignore). Covers both in-place files and any solutions/ copies.
+    return await commitAndPush(dir, message, ['.'], config.gitSyncPush !== false);
   } catch (e) {
     return { status: 'error', detail: (e as Error).message };
   }
@@ -205,13 +232,16 @@ export async function syncPending(
  * Initialize a git repository in the sync directory (idempotent) and ensure the
  * `solutions/` folder exists. Returns a human-readable status line.
  */
+/**
+ * Initialize a git repository in the sync directory (idempotent). Returns a
+ * human-readable status line.
+ */
 export async function initSyncRepo(
   config: Config = loadConfig()
 ): Promise<{ ok: boolean; dir: string; detail: string }> {
   const dir = syncDir(config);
   try {
     fs.mkdirSync(dir, { recursive: true });
-    fs.mkdirSync(path.join(dir, 'solutions'), { recursive: true });
     if (await isGitRepo(dir)) {
       return { ok: true, dir, detail: 'already a git repository' };
     }

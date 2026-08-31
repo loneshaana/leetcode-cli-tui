@@ -102,6 +102,7 @@ program
   .option('--git-sync <state>', 'Auto-commit each Accepted solution to a git repo (on|off)')
   .option('--git-dir <dir>', 'Git repo directory for synced solutions (default: workspace)')
   .option('--git-push <state>', 'Also git push after committing an Accepted solution (on|off)')
+  .option('--git-message <template>', 'Commit message template ({id} {slug} {title} {difficulty} {lang})')
   .action(lazy(() => import('./commands/config.js'), 'configCommand'));
 
 program

@@ -14,6 +14,7 @@ interface ConfigOptions {
   gitSync?: string;
   gitDir?: string;
   gitPush?: string;
+  gitMessage?: string;
 }
 
 export async function configCommand(opts: ConfigOptions): Promise<void> {
@@ -86,6 +87,10 @@ export async function configCommand(opts: ConfigOptions): Promise<void> {
     updateConfig({ gitSyncPush: enabled });
     changed.push(`git push = ${enabled ? 'on' : 'off'}`);
   }
+  if (opts.gitMessage !== undefined) {
+    updateConfig({ gitSyncMessage: opts.gitMessage });
+    changed.push(`git message = ${opts.gitMessage}`);
+  }
 
   const cfg = loadConfig();
   if (changed.length) {
@@ -102,6 +107,7 @@ export async function configCommand(opts: ConfigOptions): Promise<void> {
   process.stdout.write(`  git sync:  ${cfg.gitSync ? pc.green('on') : 'off'}\n`);
   process.stdout.write(`  git dir:   ${cfg.gitSyncDir || cfg.workspace}\n`);
   process.stdout.write(`  git push:  ${cfg.gitSyncPush === false ? 'off' : pc.green('on')}\n`);
+  process.stdout.write(`  git msg:   ${cfg.gitSyncMessage || 'Solve {id}. {title} [{difficulty}] ({lang})'}\n`);
   process.stdout.write(`  logged in: ${cfg.cookies?.session ? pc.green('yes') : pc.red('no')}\n`);
   if (cfg.cookies?.capturedAt) {
     process.stdout.write(`  session:   captured ${cfg.cookies.capturedAt}\n`);
