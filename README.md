@@ -21,6 +21,7 @@ Built with Node.js + TypeScript. Default solution language is **Java** (configur
 - [Using the TUI](#using-the-tui)
 - [Commands](#commands)
 - [Configuration](#configuration)
+- [GitHub sync](#github-sync)
 - [Language support (SQL / Pandas)](#language-support-sql--pandas)
 - [Solution file format](#solution-file-format)
 - [Troubleshooting](#troubleshooting)
@@ -360,8 +361,8 @@ Spaced-repetition schedule: which solved problems are due for another look.
 ### `leetcode sync`
 
 Commit and push your solutions to a git repository. Useful for backing up solved problems to
-GitHub. Enable automatic syncing on every Accepted submission with
-`leetcode config --git-sync on`.
+GitHub. See the full [GitHub sync](#github-sync) section for one-time setup, authentication, and
+troubleshooting.
 
 - `--init` — initialize a git repo in the sync directory and print the steps to add a GitHub
   remote.
@@ -372,21 +373,6 @@ leetcode sync --init                 # one-time: set up the repo, then add a rem
 leetcode config --git-sync on        # auto-commit + push each Accepted solution
 leetcode sync                        # manually commit & push any pending solutions
 ```
-
-Because the sync directory defaults to your **workspace** — the same place your solution files
-are saved — auto-sync commits the *actual* solution file you just solved (e.g.
-`<workspace>/1-two-sum.java`) in place; no duplicate copy is made. (If you point `--git-dir` at
-a different repo, a clean copy is exported to `<git-dir>/solutions/<id>-<slug>.<ext>` instead.)
-
-Each commit gets a **dynamic, per-problem message**. The default is
-`Solve {id}. {title} [{difficulty}] ({lang})` → e.g. `Solve 1. Two Sum [Easy] (java)`. Customize
-it with `leetcode config --git-message "<template>"` using any of the placeholders `{id}`,
-`{slug}`, `{title}`, `{difficulty}`, `{lang}`.
-
-The commit is pushed using your existing git credentials. On the **first push** it sets the
-upstream automatically (`git push -u origin <branch>`), so you only add a remote once — no
-manual first push. If a remote is missing it prints guidance and **never blocks your
-submission**. Requires `git` installed and `user.name` / `user.email` configured.
 
 ### `leetcode update` (alias `upgrade`)
 
@@ -412,6 +398,104 @@ Settings live in `~/.leetcode-cli/config.json` and are managed with `leetcode co
 | Git message | `--git-message` | `Solve {id}. {title} [{difficulty}] ({lang})` | Commit message template. |
 
 Solution files are written as `<workspace>/<id>-<slug>.<ext>`, e.g. `1-two-sum.java`.
+
+## GitHub sync
+
+Automatically back up every **Accepted** solution to a git repository (e.g. on GitHub), so
+your progress is versioned and shareable. This is opt-in and, once set up, completely hands-off.
+
+### Prerequisites
+
+- **git** installed and on your `PATH` (`git --version`).
+- A git identity configured, so commits can be created:
+  ```bash
+  git config --global user.name  "Your Name"
+  git config --global user.email "you@example.com"
+  ```
+- A way to authenticate pushes to your remote — either the **Git Credential Manager**
+  (used automatically for HTTPS GitHub remotes) or an **SSH key**. The CLI never handles
+  credentials itself; it simply shells out to `git push` and reuses whatever git already uses.
+
+### One-time setup
+
+1. **Create an empty repository** on GitHub (e.g. `leetcode-solutions`). Don't add a README or
+   `.gitignore` — keep it empty so the first push is clean.
+2. **Initialize the sync directory** (defaults to your workspace, where solutions are saved):
+   ```bash
+   leetcode sync --init
+   ```
+   This runs `git init` in the sync directory and prints the next steps.
+3. **Add your remote** (use the URL from step 1):
+   ```bash
+   cd ~/leetcode-workspace                       # your sync directory
+   git remote add origin https://github.com/<you>/leetcode-solutions.git
+   ```
+4. **Enable auto-sync:**
+   ```bash
+   leetcode config --git-sync on
+   ```
+
+That's it. The **first** Accepted solution (or a manual `leetcode sync`) makes the initial
+commit and push, automatically setting the upstream (`git push -u origin <branch>`) — no manual
+first push needed.
+
+### How it works
+
+- On every **Accepted** submission (both `leetcode submit` and the TUI), the tool commits the
+  solution and, unless disabled, pushes it.
+- Because the sync directory defaults to your **workspace**, the *actual* file you just solved
+  (e.g. `~/leetcode-workspace/1-two-sum.java`) is committed **in place** — no duplicate copy.
+  If you point `--git-dir` at a *separate* repo, a clean, header-free copy is exported to
+  `<git-dir>/solutions/<id>-<slug>.<ext>` instead.
+- Each commit message is **dynamic per problem**. Default:
+  `Solve {id}. {title} [{difficulty}] ({lang})` → e.g. `Solve 1. Two Sum [Easy] (java)`.
+- Sync failures **never block your submission** — you always see your verdict; a sync problem is
+  reported as a concise warning with guidance.
+
+### Everyday use
+
+Auto-sync needs no commands once enabled. For manual/backfill use:
+
+```bash
+leetcode sync                        # commit & push anything pending in the sync dir
+leetcode sync -m "Batch update"      # with a custom one-off commit message
+```
+
+### Configuration
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--git-sync <on\|off>` | `off` | Master switch for auto-commit on Accepted. |
+| `--git-dir <dir>` | workspace | Repository directory to sync into. |
+| `--git-push <on\|off>` | `on` | Push after committing (off = local commits only). |
+| `--git-message <template>` | `Solve {id}. {title} [{difficulty}] ({lang})` | Commit message template. |
+
+Message placeholders: `{id}`, `{slug}`, `{title}`, `{difficulty}`, `{lang}`. Example:
+
+```bash
+leetcode config --git-message "{difficulty}: {title} (#{id}) in {lang}"
+```
+
+Commit locally without pushing (e.g. push yourself later):
+
+```bash
+leetcode config --git-sync on --git-push off
+```
+
+### Troubleshooting
+
+| Symptom | Cause & fix |
+| --- | --- |
+| `... is not a git repository` | Run `leetcode sync --init` in the sync dir, then add a remote. |
+| `set git user.name / user.email` | Configure your git identity (see Prerequisites). |
+| `add a remote first: git remote add origin <url>` | No remote configured — add one. |
+| Push fails with auth error | Set up Git Credential Manager or an SSH key and retry `leetcode sync`. |
+| Solution committed but not pushed | `--git-push` is `off`, or the push failed — the warning shows why. |
+| Nothing happens on Accepted | `--git-sync` is `off`; enable with `leetcode config --git-sync on`. |
+
+> **Note:** `leetcode export`/`save` and the TUI **Ctrl-A** save-as write a clean copy under
+> `<workspace>/solutions/` by design. If you only want files at the workspace root, avoid those
+> or pass an explicit `-o` path.
 
 ## Language support (SQL / Pandas)
 
